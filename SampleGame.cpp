@@ -21,6 +21,7 @@
 #include "engine/rendering/RenderPass.h"
 #include "engine/rendering/ViewIds.h"
 #include "engine/scene/TransformSystem.h"
+#include "imgui.h"
 
 using namespace engine::assets;
 using namespace engine::core;
@@ -572,6 +573,23 @@ void SampleGame::onRender(Engine& engine)
 
     drawCallSys_.update(*registry_, engine.resources(), engine.pbrProgram(), engine.uniforms(),
                         frame);
+
+    // ---- HUD text (top-left, large) ---------------------------------------
+    const int collected = kCoinCount - coinsRemaining_;
+    ImGui::SetNextWindowPos(ImVec2(24.0f, 20.0f), ImGuiCond_Always);
+    ImGuiWindowFlags hudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+    if (ImGui::Begin("##hud", nullptr, hudFlags))
+    {
+        ImGui::SetWindowFontScale(3.0f);
+        if (coinsRemaining_ == 0)
+            ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f), "LEVEL COMPLETE!");
+        else
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Coins Collected: %d/%d",
+                               collected, kCoinCount);
+    }
+    ImGui::End();
 }
 
 void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)

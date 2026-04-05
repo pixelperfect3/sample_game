@@ -4,8 +4,11 @@
 #include "engine/assets/AssetManager.h"
 #include "engine/assets/GltfAsset.h"
 #include "engine/assets/StdFileSystem.h"
+#include <random>
+
+#include <glm/glm.hpp>
+
 #include "engine/audio/SoLoudAudioEngine.h"
-#include "engine/core/OrbitCamera.h"
 #include "engine/ecs/Entity.h"
 #include "engine/game/IGame.h"
 #include "engine/physics/JoltPhysicsEngine.h"
@@ -30,7 +33,12 @@ public:
 
 private:
     void spawnCoin(engine::ecs::Registry& registry);
+    void spawnFigureEightFloor(engine::ecs::Registry& registry, uint32_t meshId, uint32_t matId);
     void applyLoadedAssets(engine::core::Engine& engine, engine::ecs::Registry& registry);
+
+    // Random coin placement
+    std::mt19937 rng_{std::random_device{}()};
+    glm::vec3 coinSpawnPos_{0.0f};
 
     // Audio
     engine::audio::SoLoudAudioEngine audio_;
@@ -41,7 +49,6 @@ private:
     engine::physics::PhysicsSystem physicsSys_;
     engine::rendering::DrawCallBuildSystem drawCallSys_;
     engine::rendering::IblResources ibl_;
-    engine::core::OrbitCamera cam_;
 
     // Asset loading
     engine::threading::ThreadPool threadPool_{1};
@@ -60,7 +67,6 @@ private:
 
     // Entities
     engine::ecs::EntityID groundEntity_ = 0;
-    engine::ecs::EntityID plankEntity_ = 0;
     engine::ecs::EntityID coinEntity_ = 0;
     engine::ecs::EntityID ballEntity_ = 0;
 
@@ -69,6 +75,10 @@ private:
 
     // Accumulated time for the coin's spin animation.
     float coinSpinTime_ = 0.0f;
+
+    // Ball position snapshot at the moment the coin is collected — used to
+    // freeze the chase camera.
+    glm::vec3 ballPosAtCollection_{0.0f};
 
     // Registry pointer used in onRender
     engine::ecs::Registry* registry_ = nullptr;

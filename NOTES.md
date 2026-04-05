@@ -101,6 +101,32 @@ going, slow to stop, coasts after release.
 - Continuous Y-axis spin at 180°/s rebuilt each frame in `onUpdate` from
   accumulated `coinSpinTime_`.
 
+## Figure-8 level (ring version)
+
+Replaced the plank floor with a **figure-8 (number "8") ring floor**.
+
+- Two rings (annuli) — outer R=4, inner R=2.5, centres at x=±3.5. Rings
+  overlap slightly at x=0 so the ball can cross between them.
+- Built as a 0.4-unit grid of box tiles filling both annuli. Hollow
+  centres of each ring = gaps. Ball falls through if it enters the holes.
+- Thickness 1.0 (top at y=0). Ball starts at the leftmost edge of the
+  left ring.
+- Invisible safety collider at y=−20 catches the ball if it falls.
+- Coin spawns at a random (θ, r) on the **right ring** (annulus
+  sampling). R reset re-rolls it and keeps the ball resetting too.
+
+Chase camera tracks the ball and looks at the stored `coinSpawnPos_`.
+When the coin is collected, camera freezes using `ballPosAtCollection_`
+snapshotted at the moment of contact, so `fwd` doesn't drift while the
+ball keeps moving afterwards.
+
+Prior "tiled disk" and "walled ring" attempts were discarded — user
+wanted the floor itself to be an "8" glyph, i.e. two rings, not filled
+circles and not walls.
+
+Mesh colliders still aren't implemented in Sama (falls back to Box), so
+tiled boxes remain the workaround.
+
 ## Bloom (deferred)
 
 Sama has a full post-process system (SSAO / bloom / tonemap / FXAA) but the

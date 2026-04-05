@@ -2,9 +2,9 @@
 
 A tiny physics puzzle built on the [Sama engine](https://github.com/pixelperfect3/sama).
 
-A grey plank is suspended in the air with a red ball on one end and a yellow
-coin on the other. Tilt the plank to roll the ball into the coin; the coin
-vanishes and a sound plays.
+The floor is shaped like the number 8 — two rings with hollow centres.
+Push a red ball around the figure-8 to reach a yellow coin placed at a
+random spot on the other ring. The coin vanishes on contact.
 
 ## Controls
 

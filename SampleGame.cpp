@@ -113,62 +113,33 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         return;
     }
 
-    // ---- Ground (static) --------------------------------------------------
+    // ---- Safety floor (invisible, far below) ------------------------------
+    // Catches the ball if it falls through the hole in a ring.
     groundEntity_ = registry.createEntity();
     {
         TransformComponent tc{};
-        tc.position = {0.0f, -3.0f, 0.0f};
+        tc.position = {0.0f, -20.0f, 0.0f};
         tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        tc.scale = {20.0f, 0.2f, 20.0f};
+        tc.scale = {100.0f, 1.0f, 100.0f};
         tc.flags = 1;
         registry.emplace<TransformComponent>(groundEntity_, tc);
         registry.emplace<WorldTransformComponent>(groundEntity_);
-        registry.emplace<MeshComponent>(groundEntity_, MeshComponent{cubeMeshId});
-        registry.emplace<MaterialComponent>(groundEntity_, MaterialComponent{groundMatId});
-        registry.emplace<VisibleTag>(groundEntity_);
-        registry.emplace<ShadowVisibleTag>(groundEntity_, ShadowVisibleTag{0xFF});
 
         RigidBodyComponent rb;
         rb.mass = 0.0f;
         rb.type = BodyType::Kinematic;
-        rb.friction = 0.8f;
+        rb.friction = 0.5f;
         rb.restitution = 0.1f;
         registry.emplace<RigidBodyComponent>(groundEntity_, rb);
 
         ColliderComponent col;
         col.shape = ColliderShape::Box;
-        col.halfExtents = {10.0f, 0.1f, 10.0f};
+        col.halfExtents = {50.0f, 0.5f, 50.0f};
         registry.emplace<ColliderComponent>(groundEntity_, col);
     }
 
-    // ---- Plank (kinematic, rotated by keys) -------------------------------
-    // 6 units long (X), 0.15 thick (Y), 1 deep (Z). Sits at y = 2.
-    plankEntity_ = registry.createEntity();
-    {
-        TransformComponent tc{};
-        tc.position = {0.0f, 2.0f, 0.0f};
-        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        tc.scale = {6.0f, 0.15f, 1.0f};
-        tc.flags = 1;
-        registry.emplace<TransformComponent>(plankEntity_, tc);
-        registry.emplace<WorldTransformComponent>(plankEntity_);
-        registry.emplace<MeshComponent>(plankEntity_, MeshComponent{cubeMeshId});
-        registry.emplace<MaterialComponent>(plankEntity_, MaterialComponent{greyMatId});
-        registry.emplace<VisibleTag>(plankEntity_);
-        registry.emplace<ShadowVisibleTag>(plankEntity_, ShadowVisibleTag{0xFF});
-
-        RigidBodyComponent rb;
-        rb.mass = 0.0f;
-        rb.type = BodyType::Kinematic;
-        rb.friction = 0.9f;
-        rb.restitution = 0.1f;
-        registry.emplace<RigidBodyComponent>(plankEntity_, rb);
-
-        ColliderComponent col;
-        col.shape = ColliderShape::Box;
-        col.halfExtents = {3.0f, 0.075f, 0.5f};
-        registry.emplace<ColliderComponent>(plankEntity_, col);
-    }
+    // ---- Figure-8 ring floor ----------------------------------------------
+    spawnFigureEightFloor(registry, cubeMeshId, greyMatId);
 
     // ---- Coin (small sphere at +X end) ------------------------------------
     spawnCoin(registry);
@@ -178,7 +149,7 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     {
         const float r = 0.55f;
         TransformComponent tc{};
-        tc.position = {-2.4f, 2.7f, 0.0f};
+        tc.position = {-7.0f, 0.55f, 0.0f};  // leftmost edge of the left ring
         tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         tc.scale = {r * 2.0f, r * 2.0f, r * 2.0f};
         tc.flags = 1;
@@ -204,10 +175,6 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         registry.emplace<ColliderComponent>(ballEntity_, col);
     }
 
-    // ---- Camera -----------------------------------------------------------
-    cam_.distance = 12.0f;
-    cam_.pitch = 15.0f;
-    cam_.target = {0.0f, 2.0f, 0.0f};
 }
 
 void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
@@ -255,13 +222,80 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
     assetsApplied_ = true;
 }
 
+void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint32_t matId)
+{
+    // Two rings (annuli) forming a "figure 8" — hollow centres = gaps.
+    constexpr float kROuter = 4.0f;
+    constexpr float kRInner = 2.5f;
+    constexpr float kCx = 3.5f;  // circles overlap modestly at x=0 to share the pinch
+    constexpr float kCell = 0.4f;
+    constexpr float kThick = 1.0f;
+    const float halfCell = kCell * 0.5f;
+    const float halfThick = kThick * 0.5f;
+    const float outer2 = kROuter * kROuter;
+    const float inner2 = kRInner * kRInner;
+
+    const float bx = 2.0f * kROuter + kCx;
+    const float bz = kROuter;
+    for (float x = -bx; x <= bx + 0.001f; x += kCell)
+    {
+        for (float z = -bz; z <= bz + 0.001f; z += kCell)
+        {
+            const float dlx = x + kCx, dlz = z;
+            const float drx = x - kCx, drz = z;
+            const float dL2 = dlx * dlx + dlz * dlz;
+            const float dR2 = drx * drx + drz * drz;
+            const bool inLeftRing = (dL2 >= inner2 && dL2 <= outer2);
+            const bool inRightRing = (dR2 >= inner2 && dR2 <= outer2);
+            if (!inLeftRing && !inRightRing) continue;
+
+            EntityID tile = registry.createEntity();
+            TransformComponent tc{};
+            tc.position = {x, -halfThick, z};  // top surface at y=0
+            tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            tc.scale = {kCell, kThick, kCell};
+            tc.flags = 1;
+            registry.emplace<TransformComponent>(tile, tc);
+            registry.emplace<WorldTransformComponent>(tile);
+            registry.emplace<MeshComponent>(tile, MeshComponent{meshId});
+            registry.emplace<MaterialComponent>(tile, MaterialComponent{matId});
+            registry.emplace<VisibleTag>(tile);
+            registry.emplace<ShadowVisibleTag>(tile, ShadowVisibleTag{0xFF});
+
+            RigidBodyComponent rb;
+            rb.mass = 0.0f;
+            rb.type = BodyType::Kinematic;
+            rb.friction = 0.8f;
+            rb.restitution = 0.1f;
+            registry.emplace<RigidBodyComponent>(tile, rb);
+
+            ColliderComponent col;
+            col.shape = ColliderShape::Box;
+            col.halfExtents = {halfCell, halfThick, halfCell};
+            registry.emplace<ColliderComponent>(tile, col);
+        }
+    }
+}
+
 void SampleGame::spawnCoin(Registry& registry)
 {
     const float r = 0.2f;
+    coinSpinTime_ = 0.0f;
+
+    // Random point on the right ring.
+    constexpr float kROuter = 4.0f;
+    constexpr float kRInner = 2.5f;
+    constexpr float kCx = 3.5f;
+    std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+    std::uniform_real_distribution<float> radiusDist(kRInner + 0.4f, kROuter - 0.4f);
+    const float theta = angleDist(rng_);
+    const float radius = radiusDist(rng_);
+    coinSpawnPos_ = {kCx + radius * std::cos(theta), 0.55f, radius * std::sin(theta)};
+
     coinEntity_ = registry.createEntity();
 
     TransformComponent tc{};
-    tc.position = {2.6f, 2.35f, 0.0f};
+    tc.position = {coinSpawnPos_.x, coinSpawnPos_.y, coinSpawnPos_.z};
     // Stand the coin upright, then spin it 90° around Y.
     tc.rotation =
         glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
@@ -325,6 +359,9 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
             {
                 if (beepClipId_ != 0)
                     audio_.play(beepClipId_, engine::audio::SoundCategory::SFX, 1.0f, false);
+                if (auto* tc = registry.get<TransformComponent>(ballEntity_))
+                    ballPosAtCollection_ = glm::vec3(tc->position.x, tc->position.y,
+                                                     tc->position.z);
                 registry.destroyEntity(coinEntity_);
                 coinEntity_ = 0;
                 coinCollected_ = true;
@@ -371,14 +408,13 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
                 physics_.setAngularVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
             }
         };
-        resetBody(ballEntity_, {-2.4f, 2.7f, 0.0f});
+        resetBody(ballEntity_, {-7.0f, 0.55f, 0.0f});
 
-        // Respawn the coin if it had been collected.
-        if (coinCollected_)
-        {
-            spawnCoin(registry);
-            coinCollected_ = false;
-        }
+        // Always re-roll the coin on reset.
+        if (coinEntity_ != 0)
+            registry.destroyEntity(coinEntity_);
+        spawnCoin(registry);
+        coinCollected_ = false;
     }
 }
 
@@ -392,8 +428,8 @@ void SampleGame::onRender(Engine& engine)
     const float fbH = static_cast<float>(H);
 
     // Chase camera: behind and above the ball, looking at the coin.
-    const glm::vec3 kCoinPos{2.6f, 2.35f, 0.0f};
-    glm::vec3 ballPos{-2.4f, 2.7f, 0.0f};
+    const glm::vec3 kCoinPos = coinSpawnPos_;
+    glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
     if (registry_)
     {
         if (auto* tc = registry_->get<TransformComponent>(ballEntity_))
@@ -406,8 +442,11 @@ void SampleGame::onRender(Engine& engine)
     glm::vec3 anchor;
     if (coinCollected_)
     {
-        // Freeze at a fixed spot along the initial ball→coin direction.
-        fwd = glm::vec3(1.0f, 0.0f, 0.0f);
+        // Freeze using the ball position at the moment of collection.
+        glm::vec3 frozenToCoin = kCoinPos - ballPosAtCollection_;
+        frozenToCoin.y = 0.0f;
+        const float fLen = glm::length(frozenToCoin);
+        fwd = (fLen > 1e-4f) ? (frozenToCoin / fLen) : glm::vec3(1.0f, 0.0f, 0.0f);
         anchor = kCoinPos - fwd * 3.0f;
     }
     else

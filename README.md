@@ -8,11 +8,15 @@ vanishes and a sound plays.
 
 ## Controls
 
-| Key       | Action                  |
-|-----------|-------------------------|
-| Up / W    | Tilt plank (roll CCW)   |
-| Down / S  | Tilt plank (roll CW)    |
-| R         | Reset scene             |
+| Key          | Action              |
+|--------------|---------------------|
+| Up / W       | Push ball forward   |
+| Down / S     | Push ball back      |
+| Left / A     | Push ball left      |
+| Right / D    | Push ball right     |
+| R            | Reset scene         |
+
+Hold a direction — the ball accumulates speed.
 
 ## Build
 

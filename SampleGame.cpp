@@ -190,7 +190,7 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         registry.emplace<ShadowVisibleTag>(ballEntity_, ShadowVisibleTag{0xFF});
 
         RigidBodyComponent rb;
-        rb.mass = 3.0f;
+        rb.mass = 6.0f;
         rb.type = BodyType::Dynamic;
         rb.friction = 0.4f;
         rb.restitution = 0.3f;
@@ -289,8 +289,28 @@ void SampleGame::spawnCoin(Registry& registry)
     registry.emplace<ColliderComponent>(coinEntity_, col);
 }
 
-void SampleGame::onFixedUpdate(Engine& /*engine*/, Registry& registry, float fixedDt)
+void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt)
 {
+    // Apply directional force to the ball while movement keys are held.
+    // Force is persistent per fixed step, so holding a direction accelerates.
+    const auto& input = engine.inputState();
+    glm::vec3 force{0.0f};
+    constexpr float kForceMag = 45.0f;  // N; mass=6 → ~7.5 m/s² of acceleration
+    if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))
+        force.x += kForceMag;
+    if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))
+        force.x -= kForceMag;
+    if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))
+        force.z += kForceMag;
+    if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D))
+        force.z -= kForceMag;
+
+    if (force.x != 0.0f || force.z != 0.0f)
+    {
+        if (auto* rb = registry.get<RigidBodyComponent>(ballEntity_); rb && rb->bodyID != ~0u)
+            physics_.applyForce(rb->bodyID, {force.x, 0.0f, force.z});
+    }
+
     physicsSys_.update(registry, physics_, fixedDt);
 
     // Detect ball-vs-coin contact via the physics engine's contact events.
@@ -323,27 +343,9 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
 
     const auto& input = engine.inputState();
 
-    // Rotate plank around Z axis with Left/Right arrow keys (or A/D).
-    constexpr float kTiltSpeed = 45.0f;   // degrees / second
-    constexpr float kMaxTilt = 45.0f;
-
-    if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))
-        plankRoll_ += kTiltSpeed * dt;
-    if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))
-        plankRoll_ -= kTiltSpeed * dt;
-
-    plankRoll_ = glm::clamp(plankRoll_, -kMaxTilt, kMaxTilt);
-
-    if (auto* tc = registry.get<TransformComponent>(plankEntity_))
-    {
-        tc->rotation = glm::quat(glm::vec3(0.0f, 0.0f, glm::radians(plankRoll_)));
-        tc->flags |= 1;
-    }
-
     // R key resets everything.
     if (input.isKeyPressed(Key::R))
     {
-        plankRoll_ = 0.0f;
         auto resetBody = [&](EntityID id, const glm::vec3& pos)
         {
             auto* rb = registry.get<RigidBodyComponent>(id);

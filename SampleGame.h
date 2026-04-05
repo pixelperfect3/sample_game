@@ -64,9 +64,6 @@ private:
     engine::ecs::EntityID coinEntity_ = 0;
     engine::ecs::EntityID ballEntity_ = 0;
 
-    // Plank rotation state (degrees around Z axis)
-    float plankRoll_ = 0.0f;
-
     // Coin collected state
     bool coinCollected_ = false;
 

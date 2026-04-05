@@ -75,16 +75,9 @@ private:
     std::array<glm::vec3, kCoinCount> coinPositions_{};
     std::array<bool, kCoinCount> coinCollectedFlags_{};
     int coinsRemaining_ = kCoinCount;
-    int targetCoinIndex_ = -1;  // locked camera target (re-picked only on collect)
-    glm::vec3 smoothedCoinTarget_{0.0f};  // lerped toward coinPositions_[targetCoinIndex_]
 
     // Accumulated time for the coin spin animation (shared across coins).
     float coinSpinTime_ = 0.0f;
-
-    // Ball position snapshot at the moment the last coin is collected —
-    // used to freeze the chase camera.
-    glm::vec3 ballPosAtCollection_{0.0f};
-    glm::vec3 lastCoinPos_{0.0f};
 
     // Registry pointer used in onRender
     engine::ecs::Registry* registry_ = nullptr;

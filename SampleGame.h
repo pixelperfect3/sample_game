@@ -79,6 +79,12 @@ private:
     // Accumulated time for the coin spin animation (shared across coins).
     float coinSpinTime_ = 0.0f;
 
+    // Smoothed look-target (lerped toward nearest uncollected coin).
+    glm::vec3 smoothedTargetPos_{0.0f, 0.55f, 0.0f};
+    // Smoothed XZ direction from ball toward the target — used for both
+    // camera orientation and the movement-key axis.
+    glm::vec2 smoothedFwd_{0.0f, -1.0f};
+
     // Registry pointer used in onRender
     engine::ecs::Registry* registry_ = nullptr;
 };

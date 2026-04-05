@@ -292,6 +292,21 @@ void SampleGame::spawnAllCoins(Registry& registry)
         spawnCoin(registry, i);
     coinsRemaining_ = kCoinCount;
     coinCollectedFlags_.fill(false);
+
+    // Snap smoothed camera target to the nearest coin — no swing on reset.
+    const glm::vec3 ballStart{-7.0f, 0.55f, 0.0f};
+    int nearest = 0;
+    float bestSq = 1e30f;
+    for (int i = 0; i < kCoinCount; ++i)
+    {
+        const glm::vec3 d = coinPositions_[i] - ballStart;
+        const float sq = glm::dot(d, d);
+        if (sq < bestSq) { bestSq = sq; nearest = i; }
+    }
+    smoothedTargetPos_ = coinPositions_[nearest];
+    glm::vec2 fwd{smoothedTargetPos_.x - ballStart.x, smoothedTargetPos_.z - ballStart.z};
+    const float l = glm::length(fwd);
+    smoothedFwd_ = (l > 1e-4f) ? (fwd / l) : glm::vec2(0.0f, -1.0f);
 }
 
 void SampleGame::spawnCoin(Registry& registry, int index)
@@ -354,16 +369,17 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     const auto& input = engine.inputState();
     glm::vec3 force{0.0f};
     constexpr float kForceMag = 45.0f;  // N; mass=15 → 3.0 m/s² of acceleration
-    // Movement is camera-relative. Camera is fixed at (0, 14, 12) looking
-    // at origin, so its projected "forward" is -Z and "right" is +X.
-    if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))
-        force.z -= kForceMag;  // forward (into the scene)
-    if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))
-        force.z += kForceMag;  // backward (toward camera)
-    if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))
-        force.x -= kForceMag;
-    if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D))
-        force.x += kForceMag;
+    // Movement is camera-relative. smoothedFwd_ is the XZ unit vector from
+    // ball toward the current look-target. right is fwd rotated -90° in XZ.
+    const glm::vec2 fwd = smoothedFwd_;
+    const glm::vec2 right{fwd.y, -fwd.x};
+    float axisF = 0.0f, axisR = 0.0f;
+    if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))    axisF += 1.0f;
+    if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))  axisF -= 1.0f;
+    if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D)) axisR += 1.0f;
+    if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))  axisR -= 1.0f;
+    force.x = (axisF * fwd.x + axisR * right.x) * kForceMag;
+    force.z = (axisF * fwd.y + axisR * right.y) * kForceMag;
 
     if (force.x != 0.0f || force.z != 0.0f)
     {
@@ -405,9 +421,41 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
     if (!assetsApplied_)
         applyLoadedAssets(engine, registry);
 
-    // Camera target is chosen once in spawnAllCoins and never changes —
-    // even after that coin is collected. smoothedCoinTarget_ stays locked
-    // to the original target's position.
+    // Pick the nearest uncollected coin and smoothly track it.
+    glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
+    if (auto* tc = registry.get<TransformComponent>(ballEntity_))
+        ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
+
+    if (coinsRemaining_ > 0)
+    {
+        int nearest = -1;
+        float bestSq = 1e30f;
+        for (int i = 0; i < kCoinCount; ++i)
+        {
+            if (coinCollectedFlags_[i]) continue;
+            const glm::vec3 d = coinPositions_[i] - ballPos;
+            const float sq = glm::dot(d, d);
+            if (sq < bestSq) { bestSq = sq; nearest = i; }
+        }
+        if (nearest >= 0)
+        {
+            const glm::vec3 target = coinPositions_[nearest];
+            const float kTarget = 1.0f - std::exp(-3.0f * dt);
+            smoothedTargetPos_ = glm::mix(smoothedTargetPos_, target, kTarget);
+        }
+    }
+    // Recompute smoothedFwd_ from the ball→target XZ direction.
+    {
+        glm::vec2 want{smoothedTargetPos_.x - ballPos.x,
+                       smoothedTargetPos_.z - ballPos.z};
+        const float l = glm::length(want);
+        if (l > 1e-3f)
+        {
+            want /= l;
+            const float kDir = 1.0f - std::exp(-4.0f * dt);
+            smoothedFwd_ = glm::normalize(glm::mix(smoothedFwd_, want, kDir));
+        }
+    }
 
     // Spin all remaining coins around Y at 180°/s.
     coinSpinTime_ += dt;
@@ -463,18 +511,17 @@ void SampleGame::onRender(Engine& engine)
     const float fbW = static_cast<float>(W);
     const float fbH = static_cast<float>(H);
 
-    // Chase camera with a fixed offset from the ball and fixed orientation.
-    // Camera's forward direction in the XZ plane is always -Z, which the
-    // movement keys are mapped to.
+    // Chase camera: behind the ball along -smoothedFwd_, looking toward
+    // the smoothed target (nearest uncollected coin).
     glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
     if (registry_)
     {
         if (auto* tc = registry_->get<TransformComponent>(ballEntity_))
             ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
     }
-    const glm::vec3 camOffset{0.0f, 3.5f, 6.0f};
-    const glm::vec3 camPos = ballPos + camOffset;
-    const glm::mat4 viewMat = glm::lookAt(camPos, ballPos, glm::vec3(0, 1, 0));
+    const glm::vec3 fwd3{smoothedFwd_.x, 0.0f, smoothedFwd_.y};
+    const glm::vec3 camPos = ballPos - fwd3 * 6.0f + glm::vec3(0.0f, 3.5f, 0.0f);
+    const glm::mat4 viewMat = glm::lookAt(camPos, smoothedTargetPos_, glm::vec3(0, 1, 0));
     const glm::mat4 projMat = glm::perspective(glm::radians(45.f), fbW / fbH, 0.05f, 100.f);
 
     const glm::vec3 kLightDir = glm::normalize(glm::vec3(1.0f, 2.0f, 1.0f));

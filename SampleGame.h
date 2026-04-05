@@ -67,6 +67,9 @@ private:
     // Coin collected state
     bool coinCollected_ = false;
 
+    // Accumulated time for the coin's spin animation.
+    float coinSpinTime_ = 0.0f;
+
     // Registry pointer used in onRender
     engine::ecs::Registry* registry_ = nullptr;
 };

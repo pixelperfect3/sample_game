@@ -341,6 +341,20 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
     if (!assetsApplied_)
         applyLoadedAssets(engine, registry);
 
+    // Spin the coin around Y at 180°/s.
+    coinSpinTime_ += dt;
+    if (coinEntity_ != 0)
+    {
+        if (auto* tc = registry.get<TransformComponent>(coinEntity_))
+        {
+            const float spinDeg = coinSpinTime_ * 180.0f;
+            tc->rotation =
+                glm::angleAxis(glm::radians(spinDeg), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+            tc->flags |= 1;
+        }
+    }
+
     const auto& input = engine.inputState();
 
     // R key resets everything.

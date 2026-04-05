@@ -582,7 +582,7 @@ void SampleGame::onRender(Engine& engine)
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##hud", nullptr, hudFlags))
     {
-        ImGui::SetWindowFontScale(5.0f);
+        ImGui::SetWindowFontScale(10.0f);
         if (coinsRemaining_ == 0)
             ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f), "LEVEL COMPLETE!");
         else

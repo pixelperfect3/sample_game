@@ -127,6 +127,35 @@ circles and not walls.
 Mesh colliders still aren't implemented in Sama (falls back to Box), so
 tiled boxes remain the workaround.
 
+## Three coins, ball mass 15
+
+Placed three coins at random positions around the figure-8:
+- Coin 0 always spawns on the right ring (ensures at least one target
+  ahead of the ball's starting edge).
+- Coins 1 and 2 pick a ring randomly (50/50) and a random (θ, r) within
+  that ring's annulus.
+
+Collision handler loops over the coin array, plays the beep per hit,
+destroys the hit coin. `coinsRemaining_` counts down; camera targets
+the nearest uncollected coin each frame; once all are collected, camera
+freezes at the last one using `ballPosAtCollection_`.
+
+Ball mass 20 → 15 (acceleration at 45 N is now 3.0 m/s², a bit snappier).
+
+## Instancing (deferred)
+
+Sama has `InstancedMeshComponent` + `InstanceBufferBuildSystem`, but
+**no instanced PBR vertex shader** is exposed on `Engine`. The existing
+`pbrProgram` reads transforms from `bgfx::setTransform` uniforms, not
+from the instance data buffer. Using it with `InstanceBufferBuildSystem`
+would render all instances at the origin.
+
+A proper instancing path needs an engine change: an instanced vertex
+shader that pulls the world matrix from instance attributes, compiled
+via Sama's `engine_shaders`, and exposed on Engine as
+`instancedPbrProgram()`. At 3 coins the per-frame savings are zero, so
+we stayed with per-entity draw calls.
+
 ## Bloom (deferred)
 
 Sama has a full post-process system (SSAO / bloom / tonemap / FXAA) but the

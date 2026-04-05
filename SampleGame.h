@@ -4,6 +4,7 @@
 #include "engine/assets/AssetManager.h"
 #include "engine/assets/GltfAsset.h"
 #include "engine/assets/StdFileSystem.h"
+#include <array>
 #include <random>
 
 #include <glm/glm.hpp>
@@ -32,13 +33,15 @@ public:
     void onShutdown(engine::core::Engine& engine, engine::ecs::Registry& registry) override;
 
 private:
-    void spawnCoin(engine::ecs::Registry& registry);
+    static constexpr int kCoinCount = 3;
+
+    void spawnCoin(engine::ecs::Registry& registry, int index);
+    void spawnAllCoins(engine::ecs::Registry& registry);
     void spawnFigureEightFloor(engine::ecs::Registry& registry, uint32_t meshId, uint32_t matId);
     void applyLoadedAssets(engine::core::Engine& engine, engine::ecs::Registry& registry);
 
     // Random coin placement
     std::mt19937 rng_{std::random_device{}()};
-    glm::vec3 coinSpawnPos_{0.0f};
 
     // Audio
     engine::audio::SoLoudAudioEngine audio_;
@@ -67,18 +70,19 @@ private:
 
     // Entities
     engine::ecs::EntityID groundEntity_ = 0;
-    engine::ecs::EntityID coinEntity_ = 0;
     engine::ecs::EntityID ballEntity_ = 0;
+    std::array<engine::ecs::EntityID, kCoinCount> coinEntities_{};
+    std::array<glm::vec3, kCoinCount> coinPositions_{};
+    std::array<bool, kCoinCount> coinCollectedFlags_{};
+    int coinsRemaining_ = kCoinCount;
 
-    // Coin collected state
-    bool coinCollected_ = false;
-
-    // Accumulated time for the coin's spin animation.
+    // Accumulated time for the coin spin animation (shared across coins).
     float coinSpinTime_ = 0.0f;
 
-    // Ball position snapshot at the moment the coin is collected — used to
-    // freeze the chase camera.
+    // Ball position snapshot at the moment the last coin is collected —
+    // used to freeze the chase camera.
     glm::vec3 ballPosAtCollection_{0.0f};
+    glm::vec3 lastCoinPos_{0.0f};
 
     // Registry pointer used in onRender
     engine::ecs::Registry* registry_ = nullptr;

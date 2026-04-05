@@ -141,8 +141,8 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     // ---- Figure-8 ring floor ----------------------------------------------
     spawnFigureEightFloor(registry, cubeMeshId, greyMatId);
 
-    // ---- Coin (small sphere at +X end) ------------------------------------
-    spawnCoin(registry);
+    // ---- Coins (3 random spots around the figure-8) -----------------------
+    spawnAllCoins(registry);
 
     // ---- Large ball (at -X end) -------------------------------------------
     ballEntity_ = registry.createEntity();
@@ -161,7 +161,7 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         registry.emplace<ShadowVisibleTag>(ballEntity_, ShadowVisibleTag{0xFF});
 
         RigidBodyComponent rb;
-        rb.mass = 20.0f;
+        rb.mass = 15.0f;
         rb.type = BodyType::Dynamic;
         rb.friction = 0.4f;
         rb.restitution = 0.3f;
@@ -210,12 +210,13 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
     if (auto* mm = registry.get<MaterialComponent>(ballEntity_))
         mm->material = ballMatId_;
 
-    // Swap the coin's mesh/material if it still exists.
-    if (coinEntity_ != 0)
+    // Swap each live coin's mesh/material.
+    for (int i = 0; i < kCoinCount; ++i)
     {
-        if (auto* mc = registry.get<MeshComponent>(coinEntity_))
+        if (coinEntities_[i] == 0) continue;
+        if (auto* mc = registry.get<MeshComponent>(coinEntities_[i]))
             mc->mesh = coinMeshId_;
-        if (auto* mm = registry.get<MaterialComponent>(coinEntity_))
+        if (auto* mm = registry.get<MaterialComponent>(coinEntities_[i]))
             mm->material = coinMatId_;
     }
 
@@ -277,50 +278,65 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint
     }
 }
 
-void SampleGame::spawnCoin(Registry& registry)
+void SampleGame::spawnAllCoins(Registry& registry)
+{
+    for (int i = 0; i < kCoinCount; ++i)
+        spawnCoin(registry, i);
+    coinsRemaining_ = kCoinCount;
+    coinCollectedFlags_.fill(false);
+}
+
+void SampleGame::spawnCoin(Registry& registry, int index)
 {
     const float r = 0.2f;
-    coinSpinTime_ = 0.0f;
 
-    // Random point on the right ring.
+    // Random point on either ring (50/50) — spread coins around the figure.
     constexpr float kROuter = 4.0f;
     constexpr float kRInner = 2.5f;
     constexpr float kCx = 3.5f;
     std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
     std::uniform_real_distribution<float> radiusDist(kRInner + 0.4f, kROuter - 0.4f);
+    std::uniform_int_distribution<int> ringDist(0, 1);
     const float theta = angleDist(rng_);
     const float radius = radiusDist(rng_);
-    coinSpawnPos_ = {kCx + radius * std::cos(theta), 0.55f, radius * std::sin(theta)};
+    // Coin 0 always spawns on the right ring (so the ball has at least one
+    // target ahead of its starting edge); the rest pick randomly.
+    const int ring = (index == 0) ? 1 : ringDist(rng_);
+    const float cx = (ring == 0) ? -kCx : kCx;
+    coinPositions_[index] = {cx + radius * std::cos(theta), 0.55f,
+                             radius * std::sin(theta)};
 
-    coinEntity_ = registry.createEntity();
+    const EntityID coin = registry.createEntity();
+    coinEntities_[index] = coin;
 
     TransformComponent tc{};
-    tc.position = {coinSpawnPos_.x, coinSpawnPos_.y, coinSpawnPos_.z};
+    tc.position = {coinPositions_[index].x, coinPositions_[index].y,
+                   coinPositions_[index].z};
     // Stand the coin upright, then spin it 90° around Y.
     tc.rotation =
         glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
         glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     tc.scale = {r * 2.0f, r * 2.0f, r * 2.0f};
     tc.flags = 1;
-    registry.emplace<TransformComponent>(coinEntity_, tc);
-    registry.emplace<WorldTransformComponent>(coinEntity_);
-    registry.emplace<MeshComponent>(coinEntity_, MeshComponent{coinMeshId_});
-    registry.emplace<MaterialComponent>(coinEntity_, MaterialComponent{coinMatId_});
-    registry.emplace<VisibleTag>(coinEntity_);
-    registry.emplace<ShadowVisibleTag>(coinEntity_, ShadowVisibleTag{0xFF});
+    registry.emplace<TransformComponent>(coin, tc);
+    registry.emplace<WorldTransformComponent>(coin);
+    registry.emplace<MeshComponent>(coin, MeshComponent{coinMeshId_});
+    registry.emplace<MaterialComponent>(coin, MaterialComponent{coinMatId_});
+    registry.emplace<VisibleTag>(coin);
+    registry.emplace<ShadowVisibleTag>(coin, ShadowVisibleTag{0xFF});
 
     RigidBodyComponent rb;
     rb.mass = 0.0f;
     rb.type = BodyType::Kinematic;
     rb.friction = 0.5f;
     rb.restitution = 0.3f;
-    registry.emplace<RigidBodyComponent>(coinEntity_, rb);
+    registry.emplace<RigidBodyComponent>(coin, rb);
 
     ColliderComponent col;
     col.shape = ColliderShape::Sphere;
     col.radius = r;
     col.isSensor = 1;  // overlap only — ball passes through, no impulse
-    registry.emplace<ColliderComponent>(coinEntity_, col);
+    registry.emplace<ColliderComponent>(coin, col);
 }
 
 void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt)
@@ -329,7 +345,7 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     // Force is persistent per fixed step, so holding a direction accelerates.
     const auto& input = engine.inputState();
     glm::vec3 force{0.0f};
-    constexpr float kForceMag = 45.0f;  // N; mass=20 → 2.25 m/s² of acceleration
+    constexpr float kForceMag = 45.0f;  // N; mass=15 → 3.0 m/s² of acceleration
     if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))
         force.x += kForceMag;
     if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))
@@ -347,26 +363,31 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
 
     physicsSys_.update(registry, physics_, fixedDt);
 
-    // Detect ball-vs-coin contact via the physics engine's contact events.
-    if (!coinCollected_)
+    // Detect ball-vs-coin contacts — play the beep and remove any hit coin.
+    for (const auto& evt : physics_.getContactBeginEvents())
     {
-        for (const auto& evt : physics_.getContactBeginEvents())
+        EntityID other = 0;
+        if (evt.entityA == ballEntity_)      other = evt.entityB;
+        else if (evt.entityB == ballEntity_) other = evt.entityA;
+        else continue;
+
+        for (int i = 0; i < kCoinCount; ++i)
         {
-            const bool match =
-                (evt.entityA == coinEntity_ && evt.entityB == ballEntity_) ||
-                (evt.entityA == ballEntity_ && evt.entityB == coinEntity_);
-            if (match)
-            {
-                if (beepClipId_ != 0)
-                    audio_.play(beepClipId_, engine::audio::SoundCategory::SFX, 1.0f, false);
-                if (auto* tc = registry.get<TransformComponent>(ballEntity_))
-                    ballPosAtCollection_ = glm::vec3(tc->position.x, tc->position.y,
-                                                     tc->position.z);
-                registry.destroyEntity(coinEntity_);
-                coinEntity_ = 0;
-                coinCollected_ = true;
-                break;
-            }
+            if (coinCollectedFlags_[i] || coinEntities_[i] != other)
+                continue;
+
+            if (beepClipId_ != 0)
+                audio_.play(beepClipId_, engine::audio::SoundCategory::SFX, 1.0f, false);
+
+            lastCoinPos_ = coinPositions_[i];
+            if (auto* tc = registry.get<TransformComponent>(ballEntity_))
+                ballPosAtCollection_ = glm::vec3(tc->position.x, tc->position.y,
+                                                 tc->position.z);
+            registry.destroyEntity(coinEntities_[i]);
+            coinEntities_[i] = 0;
+            coinCollectedFlags_[i] = true;
+            --coinsRemaining_;
+            break;
         }
     }
 }
@@ -378,16 +399,18 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
     if (!assetsApplied_)
         applyLoadedAssets(engine, registry);
 
-    // Spin the coin around Y at 180°/s.
+    // Spin all remaining coins around Y at 180°/s.
     coinSpinTime_ += dt;
-    if (coinEntity_ != 0)
+    const float spinDeg = coinSpinTime_ * 180.0f;
+    const glm::quat spinRot =
+        glm::angleAxis(glm::radians(spinDeg), glm::vec3(0.0f, 1.0f, 0.0f)) *
+        glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    for (int i = 0; i < kCoinCount; ++i)
     {
-        if (auto* tc = registry.get<TransformComponent>(coinEntity_))
+        if (coinCollectedFlags_[i]) continue;
+        if (auto* tc = registry.get<TransformComponent>(coinEntities_[i]))
         {
-            const float spinDeg = coinSpinTime_ * 180.0f;
-            tc->rotation =
-                glm::angleAxis(glm::radians(spinDeg), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+            tc->rotation = spinRot;
             tc->flags |= 1;
         }
     }
@@ -410,11 +433,14 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
         };
         resetBody(ballEntity_, {-7.0f, 0.55f, 0.0f});
 
-        // Always re-roll the coin on reset.
-        if (coinEntity_ != 0)
-            registry.destroyEntity(coinEntity_);
-        spawnCoin(registry);
-        coinCollected_ = false;
+        // Re-roll all coins on reset.
+        for (int i = 0; i < kCoinCount; ++i)
+        {
+            if (coinEntities_[i] != 0)
+                registry.destroyEntity(coinEntities_[i]);
+            coinEntities_[i] = 0;
+        }
+        spawnAllCoins(registry);
     }
 }
 
@@ -427,20 +453,36 @@ void SampleGame::onRender(Engine& engine)
     const float fbW = static_cast<float>(W);
     const float fbH = static_cast<float>(H);
 
-    // Chase camera: behind and above the ball, looking at the coin.
-    const glm::vec3 kCoinPos = coinSpawnPos_;
+    // Chase camera: behind and above the ball, looking at the nearest
+    // remaining coin (or the last one collected if all are gone).
     glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
     if (registry_)
     {
         if (auto* tc = registry_->get<TransformComponent>(ballEntity_))
             ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
     }
+    glm::vec3 kCoinPos = lastCoinPos_;
+    if (coinsRemaining_ > 0)
+    {
+        float bestSq = 1e30f;
+        for (int i = 0; i < kCoinCount; ++i)
+        {
+            if (coinCollectedFlags_[i]) continue;
+            const glm::vec3 d = coinPositions_[i] - ballPos;
+            const float sq = glm::dot(d, d);
+            if (sq < bestSq)
+            {
+                bestSq = sq;
+                kCoinPos = coinPositions_[i];
+            }
+        }
+    }
     glm::vec3 toCoin = kCoinPos - ballPos;
     toCoin.y = 0.0f;
     float len = glm::length(toCoin);
     glm::vec3 fwd = (len > 1e-4f) ? (toCoin / len) : glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 anchor;
-    if (coinCollected_)
+    if (coinsRemaining_ == 0)
     {
         // Freeze using the ball position at the moment of collection.
         glm::vec3 frozenToCoin = kCoinPos - ballPosAtCollection_;

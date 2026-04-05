@@ -403,11 +403,26 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
 
     physicsSys_.update(registry, physics_, fixedDt);
 
-    // Reset the level if the ball has fallen through the figure-8.
-    if (auto* tc = registry.get<TransformComponent>(ballEntity_); tc && tc->position.y < -10.0f)
+    // If the ball falls off the figure-8:
+    //   - Mid-game: reset the level.
+    //   - All coins collected: let the ball fall freely, freeze physics at y=-20.
+    if (auto* tc = registry.get<TransformComponent>(ballEntity_))
     {
-        resetLevel(registry);
-        return;  // don't process stale contact events after reset
+        if (tc->position.y < -10.0f && coinsRemaining_ > 0)
+        {
+            resetLevel(registry);
+            return;
+        }
+        if (tc->position.y < -20.0f && coinsRemaining_ == 0)
+        {
+            if (auto* rb = registry.get<RigidBodyComponent>(ballEntity_);
+                rb && rb->bodyID != ~0u)
+            {
+                physics_.setLinearVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
+                physics_.setAngularVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
+            }
+            return;
+        }
     }
 
     // Detect ball-vs-coin contacts — play the beep and remove any hit coin.

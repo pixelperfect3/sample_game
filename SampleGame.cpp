@@ -385,26 +385,21 @@ void SampleGame::onRender(Engine& engine)
         if (auto* tc = registry_->get<TransformComponent>(ballEntity_))
             ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
     }
-    // Hold the camera back from the coin by at least kMinCamDist along the
-    // ball→coin axis. Without this, as the ball approaches the coin the
-    // camera would overshoot the coin and tilt straight down.
-    constexpr float kMinCamDist = 3.0f;
     glm::vec3 toCoin = kCoinPos - ballPos;
     toCoin.y = 0.0f;
     float len = glm::length(toCoin);
     glm::vec3 fwd = (len > 1e-4f) ? (toCoin / len) : glm::vec3(1.0f, 0.0f, 0.0f);
-    // Once the coin is collected, pin the camera at the min-distance spot
-    // using the initial ball→coin direction.
     glm::vec3 anchor;
     if (coinCollected_)
     {
+        // Freeze at a fixed spot along the initial ball→coin direction.
         fwd = glm::vec3(1.0f, 0.0f, 0.0f);
-        anchor = kCoinPos - fwd * kMinCamDist;
+        anchor = kCoinPos - fwd * 3.0f;
     }
     else
     {
-        // Anchor on the ball-to-coin ray, at least kMinCamDist behind the coin.
-        anchor = (len < kMinCamDist) ? (kCoinPos - fwd * kMinCamDist) : ballPos;
+        // Camera always tracks the ball, however close to the coin.
+        anchor = ballPos;
     }
     const glm::vec3 camPos = anchor - fwd * 5.5f + glm::vec3(0.0f, 3.0f, 0.0f);
     const glm::mat4 viewMat = glm::lookAt(camPos, kCoinPos, glm::vec3(0, 1, 0));

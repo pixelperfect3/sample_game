@@ -560,6 +560,11 @@ void SampleGame::onRender(Engine& engine)
         .clearColorAndDepth(0x1A1A2EFF)
         .transform(viewMat, projMat);
 
+    // Transparent pass shares the view/proj; no clear (blends onto opaque).
+    RenderPass(kViewTransparent)
+        .rect(0, 0, W, H)
+        .transform(viewMat, projMat);
+
     const glm::mat4 shadowMat = engine.shadow().shadowMatrix(0);
     PbrFrameParams frame{
         lightData, glm::value_ptr(shadowMat), engine.shadow().atlasTexture(), W, H, 0.05f, 100.f};

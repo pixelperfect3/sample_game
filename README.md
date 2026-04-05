@@ -1,0 +1,57 @@
+# sample_game
+
+A tiny physics puzzle built on the [Sama engine](https://github.com/pixelperfect3/sama).
+
+A grey plank is suspended in the air with a red ball on one end and a yellow
+coin on the other. Tilt the plank to roll the ball into the coin; the coin
+vanishes and a sound plays.
+
+## Controls
+
+| Key       | Action                  |
+|-----------|-------------------------|
+| Up / W    | Tilt plank (roll CCW)   |
+| Down / S  | Tilt plank (roll CW)    |
+| R         | Reset scene             |
+
+## Build
+
+Requires CMake ≥ 3.20, a C++20 compiler, and macOS (Metal backend). The first
+build downloads Sama and all its dependencies (bgfx, glslang, Jolt, glfw,
+SoLoud, ...) via CMake `FetchContent` — expect several minutes.
+
+```sh
+cmake -B build
+cmake --build build --target sample_game -j$(sysctl -n hw.ncpu)
+./build/sample_game
+```
+
+Run from the project root so `assets/` is found on the relative path.
+
+## Layout
+
+```
+SampleGame.h / .cpp    game logic (IGame implementation)
+main.mm                entry point — creates GameRunner
+tools/make_primitives.py  generates assets/models/{sphere,coin}.glb
+assets/beep.wav        collision sound
+assets/models/*.glb    ball and coin meshes
+```
+
+## Regenerating meshes
+
+The sphere and coin models are generated procedurally:
+
+```sh
+python3 tools/make_primitives.py
+```
+
+## Engine abstractions used
+
+- `IGame` + `GameRunner` for the frame lifecycle
+- `JoltPhysicsEngine` + `PhysicsSystem` + `ColliderComponent` (sphere, sensor)
+- `SoLoudAudioEngine` for playback, triggered by physics contact events
+- `AssetManager` + `GltfLoader` for async glTF loading
+- `IblResources` for image-based lighting, `RenderPass` + `PbrFrameParams` for rendering
+
+See `CLAUDE.md` for AI-assisted development notes.

@@ -233,55 +233,61 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
 
 void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint32_t matId)
 {
-    // Two rings (annuli) forming a "figure 8" — hollow centres = gaps.
+    // Tessellate each ring into angular×radial wedges. Each wedge is a small
+    // box oriented tangent to the ring, so edges follow the ring curvature
+    // (much smoother than an axis-aligned grid).
+    constexpr int kAngular = 64;          // angular segments per ring
+    constexpr int kRadial = 3;            // radial layers across the ring width
     constexpr float kROuter = 4.0f;
     constexpr float kRInner = 2.5f;
-    constexpr float kCx = 3.5f;  // circles overlap modestly at x=0 to share the pinch
-    constexpr float kCell = 0.4f;
+    constexpr float kCx = 3.5f;
     constexpr float kThick = 1.0f;
-    const float halfCell = kCell * 0.5f;
+    constexpr float kTau = 6.2831853f;
+    const float dR = (kROuter - kRInner) / static_cast<float>(kRadial);
+    const float dTheta = kTau / static_cast<float>(kAngular);
     const float halfThick = kThick * 0.5f;
-    const float outer2 = kROuter * kROuter;
-    const float inner2 = kRInner * kRInner;
+    const glm::vec3 centers[2] = {{-kCx, 0.0f, 0.0f}, {kCx, 0.0f, 0.0f}};
 
-    const float bx = 2.0f * kROuter + kCx;
-    const float bz = kROuter;
-    for (float x = -bx; x <= bx + 0.001f; x += kCell)
+    for (int circle = 0; circle < 2; ++circle)
     {
-        for (float z = -bz; z <= bz + 0.001f; z += kCell)
+        const glm::vec3 center = centers[circle];
+        for (int a = 0; a < kAngular; ++a)
         {
-            const float dlx = x + kCx, dlz = z;
-            const float drx = x - kCx, drz = z;
-            const float dL2 = dlx * dlx + dlz * dlz;
-            const float dR2 = drx * drx + drz * drz;
-            const bool inLeftRing = (dL2 >= inner2 && dL2 <= outer2);
-            const bool inRightRing = (dR2 >= inner2 && dR2 <= outer2);
-            if (!inLeftRing && !inRightRing) continue;
+            const float theta = dTheta * (static_cast<float>(a) + 0.5f);
+            const float cosT = std::cos(theta);
+            const float sinT = std::sin(theta);
+            for (int r = 0; r < kRadial; ++r)
+            {
+                const float rMid = kRInner + dR * (static_cast<float>(r) + 0.5f);
+                const float arcLen = dTheta * rMid;
 
-            EntityID tile = registry.createEntity();
-            TransformComponent tc{};
-            tc.position = {x, -halfThick, z};  // top surface at y=0
-            tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-            tc.scale = {kCell, kThick, kCell};
-            tc.flags = 1;
-            registry.emplace<TransformComponent>(tile, tc);
-            registry.emplace<WorldTransformComponent>(tile);
-            registry.emplace<MeshComponent>(tile, MeshComponent{meshId});
-            registry.emplace<MaterialComponent>(tile, MaterialComponent{matId});
-            registry.emplace<VisibleTag>(tile);
-            registry.emplace<ShadowVisibleTag>(tile, ShadowVisibleTag{0xFF});
+                EntityID tile = registry.createEntity();
+                TransformComponent tc{};
+                tc.position = {center.x + rMid * cosT, -halfThick, center.z + rMid * sinT};
+                tc.rotation = glm::angleAxis(-theta, glm::vec3(0.0f, 1.0f, 0.0f));
+                // 2% overlap in both dims prevents visible seams and
+                // guarantees no crack the ball could fall through.
+                tc.scale = {dR * 1.02f, kThick, arcLen * 1.02f};
+                tc.flags = 1;
+                registry.emplace<TransformComponent>(tile, tc);
+                registry.emplace<WorldTransformComponent>(tile);
+                registry.emplace<MeshComponent>(tile, MeshComponent{meshId});
+                registry.emplace<MaterialComponent>(tile, MaterialComponent{matId});
+                registry.emplace<VisibleTag>(tile);
+                registry.emplace<ShadowVisibleTag>(tile, ShadowVisibleTag{0xFF});
 
-            RigidBodyComponent rb;
-            rb.mass = 0.0f;
-            rb.type = BodyType::Kinematic;
-            rb.friction = 0.8f;
-            rb.restitution = 0.1f;
-            registry.emplace<RigidBodyComponent>(tile, rb);
+                RigidBodyComponent rb;
+                rb.mass = 0.0f;
+                rb.type = BodyType::Kinematic;
+                rb.friction = 0.8f;
+                rb.restitution = 0.1f;
+                registry.emplace<RigidBodyComponent>(tile, rb);
 
-            ColliderComponent col;
-            col.shape = ColliderShape::Box;
-            col.halfExtents = {halfCell, halfThick, halfCell};
-            registry.emplace<ColliderComponent>(tile, col);
+                ColliderComponent col;
+                col.shape = ColliderShape::Box;
+                col.halfExtents = {dR * 0.51f, halfThick, arcLen * 0.51f};
+                registry.emplace<ColliderComponent>(tile, col);
+            }
         }
     }
 }

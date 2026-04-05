@@ -210,7 +210,7 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
     {
         Material sphereMat = sphere->materials[0];
         sphereMat.transparent = 1;
-        sphereMat.albedo.w = 0.55f;  // ~55% opaque so the coin is visible through it
+        sphereMat.albedo.w = 0.75f;  // ~75% opaque — coin still visible through it
         ballMatId_ = engine.resources().addMaterial(sphereMat);
     }
 

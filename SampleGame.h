@@ -75,6 +75,7 @@ private:
     std::array<glm::vec3, kCoinCount> coinPositions_{};
     std::array<bool, kCoinCount> coinCollectedFlags_{};
     int coinsRemaining_ = kCoinCount;
+    int targetCoinIndex_ = -1;  // locked camera target (re-picked only on collect)
 
     // Accumulated time for the coin spin animation (shared across coins).
     float coinSpinTime_ = 0.0f;

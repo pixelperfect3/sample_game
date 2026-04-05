@@ -284,6 +284,7 @@ void SampleGame::spawnAllCoins(Registry& registry)
         spawnCoin(registry, i);
     coinsRemaining_ = kCoinCount;
     coinCollectedFlags_.fill(false);
+    targetCoinIndex_ = -1;  // camera re-picks nearest on next frame
 }
 
 void SampleGame::spawnCoin(Registry& registry, int index)
@@ -461,9 +462,11 @@ void SampleGame::onRender(Engine& engine)
         if (auto* tc = registry_->get<TransformComponent>(ballEntity_))
             ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
     }
-    glm::vec3 kCoinPos = lastCoinPos_;
-    if (coinsRemaining_ > 0)
+    // Pick a target coin only if we don't have a valid one. Keep it locked
+    // until collected — prevents the camera from swinging between coins.
+    if (targetCoinIndex_ < 0 || coinCollectedFlags_[targetCoinIndex_])
     {
+        targetCoinIndex_ = -1;
         float bestSq = 1e30f;
         for (int i = 0; i < kCoinCount; ++i)
         {
@@ -473,10 +476,12 @@ void SampleGame::onRender(Engine& engine)
             if (sq < bestSq)
             {
                 bestSq = sq;
-                kCoinPos = coinPositions_[i];
+                targetCoinIndex_ = i;
             }
         }
     }
+    const glm::vec3 kCoinPos =
+        (targetCoinIndex_ >= 0) ? coinPositions_[targetCoinIndex_] : lastCoinPos_;
     glm::vec3 toCoin = kCoinPos - ballPos;
     toCoin.y = 0.0f;
     float len = glm::length(toCoin);

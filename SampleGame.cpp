@@ -207,7 +207,12 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
     // The GltfAsset retains ownership of the bgfx handles (must outlive entities).
     ballMeshId_ = engine.resources().addMesh(Mesh(sphere->meshes[0]));
     if (!sphere->materials.empty())
-        ballMatId_ = engine.resources().addMaterial(sphere->materials[0]);
+    {
+        Material sphereMat = sphere->materials[0];
+        sphereMat.transparent = 1;
+        sphereMat.albedo.w = 0.55f;  // ~55% opaque so the coin is visible through it
+        ballMatId_ = engine.resources().addMaterial(sphereMat);
+    }
 
     coinMeshId_ = engine.resources().addMesh(Mesh(coin->meshes[0]));
     if (!coin->materials.empty())

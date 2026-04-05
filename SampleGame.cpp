@@ -576,13 +576,13 @@ void SampleGame::onRender(Engine& engine)
 
     // ---- HUD text (top-left, large) ---------------------------------------
     const int collected = kCoinCount - coinsRemaining_;
-    ImGui::SetNextWindowPos(ImVec2(24.0f, 20.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(80.0f, 60.0f), ImGuiCond_Always);
     ImGuiWindowFlags hudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                 ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##hud", nullptr, hudFlags))
     {
-        ImGui::SetWindowFontScale(3.0f);
+        ImGui::SetWindowFontScale(5.0f);
         if (coinsRemaining_ == 0)
             ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f), "LEVEL COMPLETE!");
         else

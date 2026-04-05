@@ -301,9 +301,9 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))
         force.x -= kForceMag;
     if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))
-        force.z += kForceMag;
-    if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D))
         force.z -= kForceMag;
+    if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D))
+        force.z += kForceMag;
 
     if (force.x != 0.0f || force.z != 0.0f)
     {

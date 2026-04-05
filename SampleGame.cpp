@@ -403,6 +403,13 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
 
     physicsSys_.update(registry, physics_, fixedDt);
 
+    // Reset the level if the ball has fallen through the figure-8.
+    if (auto* tc = registry.get<TransformComponent>(ballEntity_); tc && tc->position.y < -5.0f)
+    {
+        resetLevel(registry);
+        return;  // don't process stale contact events after reset
+    }
+
     // Detect ball-vs-coin contacts — play the beep and remove any hit coin.
     for (const auto& evt : physics_.getContactBeginEvents())
     {
@@ -491,29 +498,25 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
 
     // R key resets everything.
     if (input.isKeyPressed(Key::R))
-    {
-        auto resetBody = [&](EntityID id, const glm::vec3& pos)
-        {
-            auto* rb = registry.get<RigidBodyComponent>(id);
-            if (rb && rb->bodyID != ~0u)
-            {
-                physics_.setBodyPosition(rb->bodyID, {pos.x, pos.y, pos.z});
-                physics_.setBodyRotation(rb->bodyID, {1.0f, 0.0f, 0.0f, 0.0f});
-                physics_.setLinearVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
-                physics_.setAngularVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
-            }
-        };
-        resetBody(ballEntity_, {-7.0f, 0.55f, 0.0f});
+        resetLevel(registry);
+}
 
-        // Re-roll all coins on reset.
-        for (int i = 0; i < kCoinCount; ++i)
-        {
-            if (coinEntities_[i] != 0)
-                registry.destroyEntity(coinEntities_[i]);
-            coinEntities_[i] = 0;
-        }
-        spawnAllCoins(registry);
+void SampleGame::resetLevel(Registry& registry)
+{
+    if (auto* rb = registry.get<RigidBodyComponent>(ballEntity_); rb && rb->bodyID != ~0u)
+    {
+        physics_.setBodyPosition(rb->bodyID, {-7.0f, 0.55f, 0.0f});
+        physics_.setBodyRotation(rb->bodyID, {1.0f, 0.0f, 0.0f, 0.0f});
+        physics_.setLinearVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
+        physics_.setAngularVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
     }
+    for (int i = 0; i < kCoinCount; ++i)
+    {
+        if (coinEntities_[i] != 0)
+            registry.destroyEntity(coinEntities_[i]);
+        coinEntities_[i] = 0;
+    }
+    spawnAllCoins(registry);
 }
 
 void SampleGame::onRender(Engine& engine)

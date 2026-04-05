@@ -37,6 +37,7 @@ private:
 
     void spawnCoin(engine::ecs::Registry& registry, int index);
     void spawnAllCoins(engine::ecs::Registry& registry);
+    void resetLevel(engine::ecs::Registry& registry);
     void spawnFigureEightFloor(engine::ecs::Registry& registry, uint32_t meshId, uint32_t matId);
     void applyLoadedAssets(engine::core::Engine& engine, engine::ecs::Registry& registry);
 

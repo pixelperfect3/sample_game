@@ -87,7 +87,7 @@ while movement keys are held. Holding a direction accumulates speed.
 
 ## Ball weight tuning
 
-Mass 3 → 6 → 10 → 30. Terminal velocity under constant force is inversely
+Mass 3 → 6 → 10 → 30 → 100. Terminal velocity under constant force is inversely
 proportional to mass with Jolt's velocity-proportional damping
 (v_term = F/(m·D)), so heavier ball = lower top speed **and** lower
 acceleration. Chose mass over damping for the "weighty" feel: slow to get

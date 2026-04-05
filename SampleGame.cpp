@@ -190,7 +190,7 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         registry.emplace<ShadowVisibleTag>(ballEntity_, ShadowVisibleTag{0xFF});
 
         RigidBodyComponent rb;
-        rb.mass = 30.0f;
+        rb.mass = 100.0f;
         rb.type = BodyType::Dynamic;
         rb.friction = 0.4f;
         rb.restitution = 0.3f;
@@ -295,7 +295,7 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     // Force is persistent per fixed step, so holding a direction accelerates.
     const auto& input = engine.inputState();
     glm::vec3 force{0.0f};
-    constexpr float kForceMag = 45.0f;  // N; mass=30 → 1.5 m/s² of acceleration
+    constexpr float kForceMag = 45.0f;  // N; mass=100 → 0.45 m/s² of acceleration
     if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))
         force.x += kForceMag;
     if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))

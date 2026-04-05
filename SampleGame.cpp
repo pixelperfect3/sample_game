@@ -370,9 +370,11 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     glm::vec3 force{0.0f};
     constexpr float kForceMag = 45.0f;  // N; mass=15 → 3.0 m/s² of acceleration
     // Movement is camera-relative. smoothedFwd_ is the XZ unit vector from
-    // ball toward the current look-target. right is fwd rotated -90° in XZ.
+    // ball toward the current look-target. In a right-handed world with
+    // Y up, the camera's "right" = cross(forward, up), which in XZ is
+    // (-fwd.z, fwd.x). Using (fwd.x, fwd.y) as XZ:
     const glm::vec2 fwd = smoothedFwd_;
-    const glm::vec2 right{fwd.y, -fwd.x};
+    const glm::vec2 right{-fwd.y, fwd.x};
     float axisF = 0.0f, axisR = 0.0f;
     if (input.isKeyHeld(Key::Up) || input.isKeyHeld(Key::W))    axisF += 1.0f;
     if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))  axisF -= 1.0f;

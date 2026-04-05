@@ -412,31 +412,9 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
     if (!assetsApplied_)
         applyLoadedAssets(engine, registry);
 
-    // Re-pick target coin if the current one is gone (no snap — smoothing
-    // below will glide the camera toward the new coin).
-    if (targetCoinIndex_ < 0 || coinCollectedFlags_[targetCoinIndex_])
-    {
-        targetCoinIndex_ = -1;
-        glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
-        if (auto* tc = registry.get<TransformComponent>(ballEntity_))
-            ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
-        float bestSq = 1e30f;
-        for (int i = 0; i < kCoinCount; ++i)
-        {
-            if (coinCollectedFlags_[i]) continue;
-            const glm::vec3 d = coinPositions_[i] - ballPos;
-            const float sq = glm::dot(d, d);
-            if (sq < bestSq) { bestSq = sq; targetCoinIndex_ = i; }
-        }
-    }
-    // Smoothly lerp the camera target toward the current coin position.
-    {
-        const glm::vec3 actual = (targetCoinIndex_ >= 0)
-                                     ? coinPositions_[targetCoinIndex_]
-                                     : lastCoinPos_;
-        const float k = 1.0f - std::exp(-3.0f * dt);
-        smoothedCoinTarget_ = glm::mix(smoothedCoinTarget_, actual, k);
-    }
+    // Camera target is chosen once in spawnAllCoins and never changes —
+    // even after that coin is collected. smoothedCoinTarget_ stays locked
+    // to the original target's position.
 
     // Spin all remaining coins around Y at 180°/s.
     coinSpinTime_ += dt;

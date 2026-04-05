@@ -404,7 +404,7 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     physicsSys_.update(registry, physics_, fixedDt);
 
     // Reset the level if the ball has fallen through the figure-8.
-    if (auto* tc = registry.get<TransformComponent>(ballEntity_); tc && tc->position.y < -5.0f)
+    if (auto* tc = registry.get<TransformComponent>(ballEntity_); tc && tc->position.y < -10.0f)
     {
         resetLevel(registry);
         return;  // don't process stale contact events after reset

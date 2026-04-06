@@ -87,6 +87,7 @@ private:
     int coinsRemaining_ = kCoinCount;
     int coinCount_ = 1;
     int currentLevel_ = 0;
+    bool showTitleScreen_ = true;
     glm::vec3 ballStartPos_{-2.4f, 2.7f, 0.0f};
 
     // Track level-geometry entities for cleanup

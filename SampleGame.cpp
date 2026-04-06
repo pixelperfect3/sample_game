@@ -290,8 +290,8 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
     }
 
-    // ---- Start level 0 (plank) -------------------------------------------
-    loadLevel(engine, registry, 0);
+    // Don't load a level yet — title screen shows first.
+    // loadLevel() is called when the player clicks "Start Game".
 }
 
 void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
@@ -657,6 +657,8 @@ void SampleGame::spawnCoin(Registry& registry, int index)
 
 void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt)
 {
+    if (showTitleScreen_) return;
+
     // Apply directional force to the ball while movement keys are held.
     // Force is persistent per fixed step, so holding a direction accelerates.
     const auto& input = engine.inputState();
@@ -733,6 +735,8 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
 
 void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
 {
+    if (showTitleScreen_) return;
+
     // Drain async asset uploads; apply GLB meshes once Ready.
     assets_.processUploads();
     if (!assetsApplied_)
@@ -824,6 +828,47 @@ void SampleGame::onRender(Engine& engine)
     const auto H = engine.fbHeight();
     const float fbW = static_cast<float>(W);
     const float fbH = static_cast<float>(H);
+
+    // ---- Title screen -----------------------------------------------------
+    if (showTitleScreen_)
+    {
+        // Just clear the screen and show the title UI.
+        RenderPass(kViewOpaque)
+            .rect(0, 0, W, H)
+            .clearColorAndDepth(0x1A1A2EFF);
+
+        const float centerX = fbW * 0.5f;
+        const float centerY = fbH * 0.35f;
+
+        ImGui::SetNextWindowPos(ImVec2(centerX, centerY), ImGuiCond_Always,
+                                ImVec2(0.5f, 0.5f));
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                 ImGuiWindowFlags_NoBackground |
+                                 ImGuiWindowFlags_NoSavedSettings |
+                                 ImGuiWindowFlags_AlwaysAutoResize;
+        if (ImGui::Begin("##title", nullptr, flags))
+        {
+            ImGui::SetWindowFontScale(12.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f), "Sample Game");
+
+            ImGui::SetWindowFontScale(6.0f);
+            ImGui::Dummy(ImVec2(0, 40));
+
+            // Centre the button by calculating its width.
+            const float buttonW = 400.0f;
+            const float buttonH = 80.0f;
+            ImGui::SetCursorPosX(
+                (ImGui::GetWindowWidth() - buttonW) * 0.5f);
+            if (ImGui::Button("Start Game", ImVec2(buttonW, buttonH)))
+            {
+                showTitleScreen_ = false;
+                if (engine_ && registry_)
+                    loadLevel(*engine_, *registry_, 0);
+            }
+        }
+        ImGui::End();
+        return;  // skip 3D rendering
+    }
 
     // Chase camera: behind the ball along -smoothedFwd_, looking toward
     // the smoothed target (nearest uncollected coin).

@@ -20,6 +20,7 @@
 #include "engine/rendering/MeshBuilder.h"
 #include "engine/rendering/RenderPass.h"
 #include "engine/rendering/ViewIds.h"
+#include "engine/scene/SceneSerializer.h"
 #include "engine/scene/TransformSystem.h"
 #include "imgui.h"
 
@@ -43,6 +44,153 @@ std::vector<uint8_t> readFileBytes(const char* path)
     f.read(reinterpret_cast<char*>(bytes.data()), size);
     return bytes;
 }
+void registerCustomComponents(engine::scene::SceneSerializer& ser, uint32_t cubeMeshId)
+{
+    using namespace engine::ecs;
+    using namespace engine::rendering;
+    using namespace engine::physics;
+    using namespace engine::io;
+
+    // ---- MeshComponent (all level tiles are cubes) -------------------------
+    ser.registerComponent(
+        "Mesh",
+        [](EntityID e, const Registry& reg, const RenderResources&, JsonWriter& w)
+        {
+            if (!reg.get<MeshComponent>(e)) return;
+            w.key("Mesh"); w.startObject();
+            w.key("type"); w.writeString("cube");
+            w.endObject();
+        },
+        [cubeMeshId](EntityID e, Registry& reg, RenderResources&,
+                     engine::assets::AssetManager&, JsonValue)
+        {
+            reg.emplace<MeshComponent>(e, MeshComponent{cubeMeshId});
+        });
+
+    // ---- MaterialComponent (inline PBR properties) -------------------------
+    ser.registerComponent(
+        "Material",
+        [](EntityID e, const Registry& reg, const RenderResources& res, JsonWriter& w)
+        {
+            const auto* mc = reg.get<MaterialComponent>(e);
+            if (!mc) return;
+            const Material* mat = res.getMaterial(mc->material);
+            if (!mat) return;
+            w.key("Material"); w.startObject();
+            w.key("albedo"); w.writeVec4(mat->albedo);
+            w.key("roughness"); w.writeFloat(mat->roughness);
+            w.key("metallic"); w.writeFloat(mat->metallic);
+            w.key("emissiveScale"); w.writeFloat(mat->emissiveScale);
+            w.key("transparent"); w.writeUint(mat->transparent);
+            w.endObject();
+        },
+        [](EntityID e, Registry& reg, RenderResources& res,
+           engine::assets::AssetManager&, JsonValue val)
+        {
+            Material mat;
+            mat.albedo = val.hasMember("albedo") ? val["albedo"].getVec4()
+                                                 : engine::math::Vec4(1.0f);
+            mat.roughness = val["roughness"].getFloat(0.5f);
+            mat.metallic = val["metallic"].getFloat(0.0f);
+            mat.emissiveScale = val["emissiveScale"].getFloat(0.0f);
+            mat.transparent = static_cast<uint8_t>(val["transparent"].getUint(0));
+            const uint32_t matId = res.addMaterial(mat);
+            reg.emplace<MaterialComponent>(e, MaterialComponent{matId});
+        });
+
+    // ---- RigidBodyComponent ------------------------------------------------
+    ser.registerComponent(
+        "RigidBody",
+        [](EntityID e, const Registry& reg, const RenderResources&, JsonWriter& w)
+        {
+            const auto* rb = reg.get<RigidBodyComponent>(e);
+            if (!rb) return;
+            w.key("RigidBody"); w.startObject();
+            w.key("mass"); w.writeFloat(rb->mass);
+            w.key("type"); w.writeUint(static_cast<uint32_t>(rb->type));
+            w.key("friction"); w.writeFloat(rb->friction);
+            w.key("restitution"); w.writeFloat(rb->restitution);
+            w.key("linearDamping"); w.writeFloat(rb->linearDamping);
+            w.key("angularDamping"); w.writeFloat(rb->angularDamping);
+            w.key("layer"); w.writeUint(rb->layer);
+            w.endObject();
+        },
+        [](EntityID e, Registry& reg, RenderResources&,
+           engine::assets::AssetManager&, JsonValue val)
+        {
+            RigidBodyComponent rb;
+            rb.mass = val["mass"].getFloat(1.0f);
+            rb.type = static_cast<BodyType>(val["type"].getUint(0));
+            rb.friction = val["friction"].getFloat(0.5f);
+            rb.restitution = val["restitution"].getFloat(0.3f);
+            rb.linearDamping = val["linearDamping"].getFloat(0.05f);
+            rb.angularDamping = val["angularDamping"].getFloat(0.05f);
+            rb.layer = static_cast<uint8_t>(val["layer"].getUint(0));
+            reg.emplace<RigidBodyComponent>(e, rb);
+        });
+
+    // ---- ColliderComponent -------------------------------------------------
+    ser.registerComponent(
+        "Collider",
+        [](EntityID e, const Registry& reg, const RenderResources&, JsonWriter& w)
+        {
+            const auto* col = reg.get<ColliderComponent>(e);
+            if (!col) return;
+            w.key("Collider"); w.startObject();
+            w.key("shape"); w.writeUint(static_cast<uint32_t>(col->shape));
+            w.key("offset"); w.writeVec3(col->offset);
+            w.key("halfExtents"); w.writeVec3(col->halfExtents);
+            w.key("radius"); w.writeFloat(col->radius);
+            w.key("isSensor"); w.writeUint(col->isSensor);
+            w.endObject();
+        },
+        [](EntityID e, Registry& reg, RenderResources&,
+           engine::assets::AssetManager&, JsonValue val)
+        {
+            ColliderComponent col;
+            col.shape = static_cast<ColliderShape>(val["shape"].getUint(0));
+            col.offset = val.hasMember("offset") ? val["offset"].getVec3()
+                                                 : engine::math::Vec3(0.0f);
+            col.halfExtents = val.hasMember("halfExtents") ? val["halfExtents"].getVec3()
+                                                           : engine::math::Vec3(0.5f);
+            col.radius = val["radius"].getFloat(0.5f);
+            col.isSensor = static_cast<uint8_t>(val["isSensor"].getUint(0));
+            reg.emplace<ColliderComponent>(e, col);
+        });
+
+    // ---- VisibleTag (presence-only) ----------------------------------------
+    ser.registerComponent(
+        "Visible",
+        [](EntityID e, const Registry& reg, const RenderResources&, JsonWriter& w)
+        {
+            if (!reg.has<VisibleTag>(e)) return;
+            w.key("Visible"); w.startObject(); w.endObject();
+        },
+        [](EntityID e, Registry& reg, RenderResources&,
+           engine::assets::AssetManager&, JsonValue)
+        {
+            reg.emplace<VisibleTag>(e);
+        });
+
+    // ---- ShadowVisibleTag --------------------------------------------------
+    ser.registerComponent(
+        "ShadowVisible",
+        [](EntityID e, const Registry& reg, const RenderResources&, JsonWriter& w)
+        {
+            const auto* sv = reg.get<ShadowVisibleTag>(e);
+            if (!sv) return;
+            w.key("ShadowVisible"); w.startObject();
+            w.key("cascadeMask"); w.writeUint(sv->cascadeMask);
+            w.endObject();
+        },
+        [](EntityID e, Registry& reg, RenderResources&,
+           engine::assets::AssetManager&, JsonValue val)
+        {
+            reg.emplace<ShadowVisibleTag>(e,
+                ShadowVisibleTag{static_cast<uint8_t>(val["cascadeMask"].getUint(0xFF))});
+        });
+}
+
 }  // namespace
 
 SampleGame::SampleGame()
@@ -84,13 +232,15 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     greyMat.albedo = {0.55f, 0.55f, 0.58f, 1.0f};
     greyMat.roughness = 0.7f;
     greyMat.metallic = 0.1f;
-    const uint32_t greyMatId = engine.resources().addMaterial(greyMat);
+    greyMatId_ = engine.resources().addMaterial(greyMat);
+    const uint32_t greyMatId = greyMatId_;
 
     Material groundMat;
     groundMat.albedo = {0.22f, 0.22f, 0.25f, 1.0f};
     groundMat.roughness = 0.9f;
     groundMat.metallic = 0.0f;
-    const uint32_t groundMatId = engine.resources().addMaterial(groundMat);
+    groundMatId_ = engine.resources().addMaterial(groundMat);
+    const uint32_t groundMatId = groundMatId_;
 
     Material coinMat;
     coinMat.albedo = {1.0f, 0.85f, 0.2f, 1.0f};
@@ -140,8 +290,26 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         registry.emplace<ColliderComponent>(groundEntity_, col);
     }
 
-    // ---- Figure-8 ring floor ----------------------------------------------
-    spawnFigureEightFloor(registry, cubeMeshId, greyMatId);
+    // ---- Figure-8 ring floor — save to scene file -------------------------
+    {
+        // Generate the floor in a temporary registry, then save to JSON.
+        Registry tempReg;
+        spawnFigureEightFloor(tempReg, cubeMeshId, greyMatId);
+
+        engine::scene::SceneSerializer ser;
+        ser.registerEngineComponents();
+        registerCustomComponents(ser, cubeMeshId);
+        ser.saveScene(tempReg, engine.resources(), "levels/figure8.json");
+        std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
+    }
+
+    // Load the saved scene file into the main registry.
+    {
+        engine::scene::SceneSerializer ser;
+        ser.registerEngineComponents();
+        registerCustomComponents(ser, cubeMeshId);
+        ser.loadScene("levels/figure8.json", registry, engine.resources(), assets_);
+    }
 
     // ---- Coins (3 random spots around the figure-8) -----------------------
     spawnAllCoins(registry);

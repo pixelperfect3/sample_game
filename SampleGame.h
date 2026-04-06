@@ -6,6 +6,7 @@
 #include "engine/assets/StdFileSystem.h"
 #include <array>
 #include <random>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -68,6 +69,8 @@ private:
     uint32_t coinMatId_ = 0;
     uint32_t ballMeshId_ = 0;
     uint32_t ballMatId_ = 0;
+    uint32_t greyMatId_ = 0;
+    uint32_t groundMatId_ = 0;
 
     // Entities
     engine::ecs::EntityID groundEntity_ = 0;
@@ -76,6 +79,9 @@ private:
     std::array<glm::vec3, kCoinCount> coinPositions_{};
     std::array<bool, kCoinCount> coinCollectedFlags_{};
     int coinsRemaining_ = kCoinCount;
+
+    // Track level-geometry entities for cleanup
+    std::vector<engine::ecs::EntityID> levelEntities_;
 
     // Accumulated time for the coin spin animation (shared across coins).
     float coinSpinTime_ = 0.0f;

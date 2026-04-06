@@ -202,6 +202,7 @@ SampleGame::~SampleGame() = default;
 
 void SampleGame::onInit(Engine& engine, Registry& registry)
 {
+    engine_ = &engine;
     registry_ = &registry;
 
     // ---- Kick off glTF loads (async; applied once Ready) ------------------
@@ -265,34 +266,20 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         return;
     }
 
-    // ---- Safety floor (invisible, far below) ------------------------------
-    // Catches the ball if it falls through the hole in a ring.
-    groundEntity_ = registry.createEntity();
+    // ---- Generate scene files for both levels ------------------------------
     {
-        TransformComponent tc{};
-        tc.position = {0.0f, -20.0f, 0.0f};
-        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        tc.scale = {100.0f, 1.0f, 100.0f};
-        tc.flags = 1;
-        registry.emplace<TransformComponent>(groundEntity_, tc);
-        registry.emplace<WorldTransformComponent>(groundEntity_);
+        // Plank level
+        Registry tempReg;
+        spawnPlankLevel(tempReg);
 
-        RigidBodyComponent rb;
-        rb.mass = 0.0f;
-        rb.type = BodyType::Kinematic;
-        rb.friction = 0.5f;
-        rb.restitution = 0.1f;
-        registry.emplace<RigidBodyComponent>(groundEntity_, rb);
-
-        ColliderComponent col;
-        col.shape = ColliderShape::Box;
-        col.halfExtents = {50.0f, 0.5f, 50.0f};
-        registry.emplace<ColliderComponent>(groundEntity_, col);
+        engine::scene::SceneSerializer ser;
+        ser.registerEngineComponents();
+        registerCustomComponents(ser, cubeMeshId);
+        ser.saveScene(tempReg, engine.resources(), "levels/plank.json");
+        std::fprintf(stderr, "SampleGame: saved levels/plank.json\n");
     }
-
-    // ---- Figure-8 ring floor — save to scene file -------------------------
     {
-        // Generate the floor in a temporary registry, then save to JSON.
+        // Figure-8 level
         Registry tempReg;
         spawnFigureEightFloor(tempReg, cubeMeshId, greyMatId);
 
@@ -303,55 +290,8 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
     }
 
-    // Load the saved scene file into the main registry.
-    {
-        engine::scene::SceneSerializer ser;
-        ser.registerEngineComponents();
-        registerCustomComponents(ser, cubeMeshId);
-        ser.loadScene("levels/figure8.json", registry, engine.resources(), assets_);
-    }
-
-    // ---- Coins (3 random spots around the figure-8) -----------------------
-    spawnAllCoins(registry);
-
-    // ---- Large ball (at -X end) -------------------------------------------
-    ballEntity_ = registry.createEntity();
-    {
-        const float r = 0.55f;
-        TransformComponent tc{};
-        tc.position = {-7.0f, 0.55f, 0.0f};  // leftmost edge of the left ring
-        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        tc.scale = {r * 2.0f, r * 2.0f, r * 2.0f};
-        tc.flags = 1;
-        registry.emplace<TransformComponent>(ballEntity_, tc);
-        registry.emplace<WorldTransformComponent>(ballEntity_);
-        registry.emplace<MeshComponent>(ballEntity_, MeshComponent{ballMeshId_});
-        registry.emplace<MaterialComponent>(ballEntity_, MaterialComponent{ballMatId_});
-        registry.emplace<VisibleTag>(ballEntity_);
-        registry.emplace<ShadowVisibleTag>(ballEntity_, ShadowVisibleTag{0xFF});
-
-        RigidBodyComponent rb;
-        rb.mass = 15.0f;
-        rb.type = BodyType::Dynamic;
-        rb.friction = 0.4f;
-        rb.restitution = 0.3f;
-        rb.linearDamping = 0.05f;
-        rb.angularDamping = 0.05f;
-        registry.emplace<RigidBodyComponent>(ballEntity_, rb);
-
-        ColliderComponent col;
-        col.shape = ColliderShape::Sphere;
-        col.radius = r;
-        registry.emplace<ColliderComponent>(ballEntity_, col);
-    }
-
-    // Populate WorldTransformComponent for every entity before the first
-    // physics step — PhysicsSystem::syncKinematicBodies reads world matrices
-    // on every step, and GameRunner otherwise only runs TransformSystem
-    // after onUpdate (too late for frame 1, causing kinematic tiles to drift
-    // toward the origin).
-    engine::scene::TransformSystem transformSys;
-    transformSys.update(registry);
+    // ---- Start level 0 (plank) -------------------------------------------
+    loadLevel(engine, registry, 0);
 }
 
 void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
@@ -393,7 +333,7 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
         mm->material = ballMatId_;
 
     // Swap each live coin's mesh/material.
-    for (int i = 0; i < kCoinCount; ++i)
+    for (int i = 0; i < coinCount_; ++i)
     {
         if (coinEntities_[i] == 0) continue;
         if (auto* mc = registry.get<MeshComponent>(coinEntities_[i]))
@@ -466,18 +406,202 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint
     }
 }
 
+void SampleGame::spawnPlankLevel(Registry& registry)
+{
+    // Visible ground platform
+    {
+        EntityID ground = registry.createEntity();
+        TransformComponent tc{};
+        tc.position = {0.0f, -3.0f, 0.0f};
+        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        tc.scale = {20.0f, 0.2f, 20.0f};
+        tc.flags = 1;
+        registry.emplace<TransformComponent>(ground, tc);
+        registry.emplace<WorldTransformComponent>(ground);
+        registry.emplace<MeshComponent>(ground, MeshComponent{cubeMeshId_});
+        registry.emplace<MaterialComponent>(ground, MaterialComponent{groundMatId_});
+        registry.emplace<VisibleTag>(ground);
+        registry.emplace<ShadowVisibleTag>(ground, ShadowVisibleTag{0xFF});
+
+        RigidBodyComponent rb;
+        rb.mass = 0.0f;
+        rb.type = BodyType::Kinematic;
+        rb.friction = 0.8f;
+        rb.restitution = 0.1f;
+        registry.emplace<RigidBodyComponent>(ground, rb);
+
+        ColliderComponent col;
+        col.shape = ColliderShape::Box;
+        col.halfExtents = {10.0f, 0.1f, 10.0f};
+        registry.emplace<ColliderComponent>(ground, col);
+    }
+
+    // Plank on top
+    {
+        EntityID plank = registry.createEntity();
+        TransformComponent tc{};
+        tc.position = {0.0f, 2.0f, 0.0f};
+        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        tc.scale = {6.0f, 0.15f, 1.0f};
+        tc.flags = 1;
+        registry.emplace<TransformComponent>(plank, tc);
+        registry.emplace<WorldTransformComponent>(plank);
+        registry.emplace<MeshComponent>(plank, MeshComponent{cubeMeshId_});
+        registry.emplace<MaterialComponent>(plank, MaterialComponent{greyMatId_});
+        registry.emplace<VisibleTag>(plank);
+        registry.emplace<ShadowVisibleTag>(plank, ShadowVisibleTag{0xFF});
+
+        RigidBodyComponent rb;
+        rb.mass = 0.0f;
+        rb.type = BodyType::Kinematic;
+        rb.friction = 0.8f;
+        rb.restitution = 0.1f;
+        registry.emplace<RigidBodyComponent>(plank, rb);
+
+        ColliderComponent col;
+        col.shape = ColliderShape::Box;
+        col.halfExtents = {3.0f, 0.075f, 0.5f};
+        registry.emplace<ColliderComponent>(plank, col);
+    }
+}
+
+void SampleGame::spawnBall(Registry& registry)
+{
+    ballEntity_ = registry.createEntity();
+    const float r = 0.55f;
+    TransformComponent tc{};
+    tc.position = {ballStartPos_.x, ballStartPos_.y, ballStartPos_.z};
+    tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    tc.scale = {r * 2.0f, r * 2.0f, r * 2.0f};
+    tc.flags = 1;
+    registry.emplace<TransformComponent>(ballEntity_, tc);
+    registry.emplace<WorldTransformComponent>(ballEntity_);
+    registry.emplace<MeshComponent>(ballEntity_, MeshComponent{ballMeshId_});
+    registry.emplace<MaterialComponent>(ballEntity_, MaterialComponent{ballMatId_});
+    registry.emplace<VisibleTag>(ballEntity_);
+    registry.emplace<ShadowVisibleTag>(ballEntity_, ShadowVisibleTag{0xFF});
+
+    RigidBodyComponent rb;
+    rb.mass = 15.0f;
+    rb.type = BodyType::Dynamic;
+    rb.friction = 0.4f;
+    rb.restitution = 0.3f;
+    rb.linearDamping = 0.05f;
+    rb.angularDamping = 0.05f;
+    registry.emplace<RigidBodyComponent>(ballEntity_, rb);
+
+    ColliderComponent col;
+    col.shape = ColliderShape::Sphere;
+    col.radius = r;
+    registry.emplace<ColliderComponent>(ballEntity_, col);
+}
+
+void SampleGame::clearLevel(Registry& registry)
+{
+    // Destroy coins
+    for (int i = 0; i < kCoinCount; ++i)
+    {
+        if (coinEntities_[i] != 0)
+            registry.destroyEntity(coinEntities_[i]);
+        coinEntities_[i] = 0;
+    }
+    coinCollectedFlags_.fill(false);
+    coinsRemaining_ = 0;
+
+    // Destroy ball
+    if (ballEntity_ != 0)
+    {
+        registry.destroyEntity(ballEntity_);
+        ballEntity_ = 0;
+    }
+
+    // Destroy level entities
+    for (auto eid : levelEntities_)
+    {
+        if (eid != 0)
+            registry.destroyEntity(eid);
+    }
+    levelEntities_.clear();
+
+    // Destroy ground entity (safety floor)
+    if (groundEntity_ != 0)
+    {
+        registry.destroyEntity(groundEntity_);
+        groundEntity_ = 0;
+    }
+}
+
+void SampleGame::loadLevel(Engine& engine, Registry& registry, int level)
+{
+    clearLevel(registry);
+    currentLevel_ = level;
+
+    if (level == 0)
+    {
+        // Plank level
+        ballStartPos_ = {-2.4f, 2.7f, 0.0f};
+        coinCount_ = 1;
+
+        engine::scene::SceneSerializer ser;
+        ser.registerEngineComponents();
+        registerCustomComponents(ser, cubeMeshId_);
+        ser.loadScene("levels/plank.json", registry,
+                      engine.resources(), assets_);
+    }
+    else if (level == 1)
+    {
+        // Figure-8 level
+        ballStartPos_ = {-7.0f, 0.55f, 0.0f};
+        coinCount_ = 3;
+
+        engine::scene::SceneSerializer ser;
+        ser.registerEngineComponents();
+        registerCustomComponents(ser, cubeMeshId_);
+        ser.loadScene("levels/figure8.json", registry,
+                      engine.resources(), assets_);
+
+        // Invisible safety floor at y=-20
+        groundEntity_ = registry.createEntity();
+        TransformComponent tc{};
+        tc.position = {0.0f, -20.0f, 0.0f};
+        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        tc.scale = {100.0f, 1.0f, 100.0f};
+        tc.flags = 1;
+        registry.emplace<TransformComponent>(groundEntity_, tc);
+        registry.emplace<WorldTransformComponent>(groundEntity_);
+
+        RigidBodyComponent rb;
+        rb.mass = 0.0f;
+        rb.type = BodyType::Kinematic;
+        rb.friction = 0.5f;
+        rb.restitution = 0.1f;
+        registry.emplace<RigidBodyComponent>(groundEntity_, rb);
+
+        ColliderComponent col;
+        col.shape = ColliderShape::Box;
+        col.halfExtents = {50.0f, 0.5f, 50.0f};
+        registry.emplace<ColliderComponent>(groundEntity_, col);
+    }
+
+    spawnBall(registry);
+    spawnAllCoins(registry);
+
+    engine::scene::TransformSystem transformSys;
+    transformSys.update(registry);
+}
+
 void SampleGame::spawnAllCoins(Registry& registry)
 {
-    for (int i = 0; i < kCoinCount; ++i)
+    for (int i = 0; i < coinCount_; ++i)
         spawnCoin(registry, i);
-    coinsRemaining_ = kCoinCount;
+    coinsRemaining_ = coinCount_;
     coinCollectedFlags_.fill(false);
 
     // Snap smoothed camera target to the nearest coin — no swing on reset.
-    const glm::vec3 ballStart{-7.0f, 0.55f, 0.0f};
+    const glm::vec3 ballStart = ballStartPos_;
     int nearest = 0;
     float bestSq = 1e30f;
-    for (int i = 0; i < kCoinCount; ++i)
+    for (int i = 0; i < coinCount_; ++i)
     {
         const glm::vec3 d = coinPositions_[i] - ballStart;
         const float sq = glm::dot(d, d);
@@ -493,21 +617,28 @@ void SampleGame::spawnCoin(Registry& registry, int index)
 {
     const float r = 0.2f;
 
-    // Random point on either ring (50/50) — spread coins around the figure.
-    constexpr float kROuter = 4.0f;
-    constexpr float kRInner = 2.5f;
-    constexpr float kCx = 3.5f;
-    std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
-    std::uniform_real_distribution<float> radiusDist(kRInner + 0.4f, kROuter - 0.4f);
-    std::uniform_int_distribution<int> ringDist(0, 1);
-    const float theta = angleDist(rng_);
-    const float radius = radiusDist(rng_);
-    // Coin 0 always spawns on the right ring (so the ball has at least one
-    // target ahead of its starting edge); the rest pick randomly.
-    const int ring = (index == 0) ? 1 : ringDist(rng_);
-    const float cx = (ring == 0) ? -kCx : kCx;
-    coinPositions_[index] = {cx + radius * std::cos(theta), 0.55f,
-                             radius * std::sin(theta)};
+    if (currentLevel_ == 0)
+    {
+        // Plank level: single coin at fixed position
+        coinPositions_[index] = {2.6f, 2.35f, 0.0f};
+    }
+    else
+    {
+        // Figure-8 level: random ring placement
+        constexpr float kROuter = 4.0f;
+        constexpr float kRInner = 2.5f;
+        constexpr float kCx = 3.5f;
+        std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+        std::uniform_real_distribution<float> radiusDist(
+            kRInner + 0.4f, kROuter - 0.4f);
+        std::uniform_int_distribution<int> ringDist(0, 1);
+        const float theta = angleDist(rng_);
+        const float radius = radiusDist(rng_);
+        const int ring = (index == 0) ? 1 : ringDist(rng_);
+        const float cx = (ring == 0) ? -kCx : kCx;
+        coinPositions_[index] = {cx + radius * std::cos(theta), 0.55f,
+                                 radius * std::sin(theta)};
+    }
 
     const EntityID coin = registry.createEntity();
     coinEntities_[index] = coin;
@@ -601,7 +732,7 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
         else if (evt.entityB == ballEntity_) other = evt.entityA;
         else continue;
 
-        for (int i = 0; i < kCoinCount; ++i)
+        for (int i = 0; i < coinCount_; ++i)
         {
             if (coinCollectedFlags_[i] || coinEntities_[i] != other)
                 continue;
@@ -626,7 +757,7 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
         applyLoadedAssets(engine, registry);
 
     // Pick the nearest uncollected coin and smoothly track it.
-    glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
+    glm::vec3 ballPos = ballStartPos_;
     if (auto* tc = registry.get<TransformComponent>(ballEntity_))
         ballPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
 
@@ -634,7 +765,7 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
     {
         int nearest = -1;
         float bestSq = 1e30f;
-        for (int i = 0; i < kCoinCount; ++i)
+        for (int i = 0; i < coinCount_; ++i)
         {
             if (coinCollectedFlags_[i]) continue;
             const glm::vec3 d = coinPositions_[i] - ballPos;
@@ -667,7 +798,7 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
     const glm::quat spinRot =
         glm::angleAxis(glm::radians(spinDeg), glm::vec3(0.0f, 1.0f, 0.0f)) *
         glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    for (int i = 0; i < kCoinCount; ++i)
+    for (int i = 0; i < coinCount_; ++i)
     {
         if (coinCollectedFlags_[i]) continue;
         if (auto* tc = registry.get<TransformComponent>(coinEntities_[i]))
@@ -688,12 +819,13 @@ void SampleGame::resetLevel(Registry& registry)
 {
     if (auto* rb = registry.get<RigidBodyComponent>(ballEntity_); rb && rb->bodyID != ~0u)
     {
-        physics_.setBodyPosition(rb->bodyID, {-7.0f, 0.55f, 0.0f});
+        physics_.setBodyPosition(rb->bodyID,
+            {ballStartPos_.x, ballStartPos_.y, ballStartPos_.z});
         physics_.setBodyRotation(rb->bodyID, {1.0f, 0.0f, 0.0f, 0.0f});
         physics_.setLinearVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
         physics_.setAngularVelocity(rb->bodyID, {0.0f, 0.0f, 0.0f});
     }
-    for (int i = 0; i < kCoinCount; ++i)
+    for (int i = 0; i < coinCount_; ++i)
     {
         if (coinEntities_[i] != 0)
             registry.destroyEntity(coinEntities_[i]);
@@ -713,7 +845,7 @@ void SampleGame::onRender(Engine& engine)
 
     // Chase camera: behind the ball along -smoothedFwd_, looking toward
     // the smoothed target (nearest uncollected coin).
-    glm::vec3 ballPos{-7.0f, 0.55f, 0.0f};
+    glm::vec3 ballPos = ballStartPos_;
     if (registry_)
     {
         if (auto* tc = registry_->get<TransformComponent>(ballEntity_))
@@ -771,19 +903,47 @@ void SampleGame::onRender(Engine& engine)
                         frame);
 
     // ---- HUD text (top-left, large) ---------------------------------------
-    const int collected = kCoinCount - coinsRemaining_;
+    const int collected = coinCount_ - coinsRemaining_;
+    const bool levelComplete = (coinsRemaining_ == 0);
+    const bool hasNextLevel = (currentLevel_ < kLevelCount - 1);
+
     ImGui::SetNextWindowPos(ImVec2(80.0f, 60.0f), ImGuiCond_Always);
+    // Allow input when showing "Next Level" button; otherwise block input.
     ImGuiWindowFlags hudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
-                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+                                ImGuiWindowFlags_NoBackground |
+                                ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_AlwaysAutoResize;
+    if (!levelComplete || !hasNextLevel)
+        hudFlags |= ImGuiWindowFlags_NoInputs;
+
     if (ImGui::Begin("##hud", nullptr, hudFlags))
     {
         ImGui::SetWindowFontScale(10.0f);
-        if (coinsRemaining_ == 0)
-            ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f), "LEVEL COMPLETE!");
+        if (levelComplete)
+        {
+            if (hasNextLevel)
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f),
+                                   "LEVEL COMPLETE!");
+                ImGui::SetWindowFontScale(5.0f);
+                if (ImGui::Button("Next Level"))
+                {
+                    if (engine_ && registry_)
+                        loadLevel(*engine_, *registry_, currentLevel_ + 1);
+                }
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f),
+                                   "YOU WIN!");
+            }
+        }
         else
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Coins Collected: %d/%d",
-                               collected, kCoinCount);
+        {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f),
+                               "Coins Collected: %d/%d",
+                               collected, coinCount_);
+        }
     }
     ImGui::End();
 }

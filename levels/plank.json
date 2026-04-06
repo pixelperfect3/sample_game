@@ -1,0 +1,137 @@
+{
+    "version": 1,
+    "entities": [
+        {
+            "id": 0,
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        -3.0,
+                        0.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "scale": [
+                        20.0,
+                        0.20000000298023225,
+                        20.0
+                    ]
+                },
+                "Mesh": {
+                    "type": "cube"
+                },
+                "Material": {
+                    "albedo": [
+                        0.2199999988079071,
+                        0.2199999988079071,
+                        0.25,
+                        1.0
+                    ],
+                    "roughness": 0.8999999761581421,
+                    "metallic": 0.0,
+                    "emissiveScale": 0.0,
+                    "transparent": 0
+                },
+                "RigidBody": {
+                    "mass": 0.0,
+                    "type": 2,
+                    "friction": 0.800000011920929,
+                    "restitution": 0.10000000149011612,
+                    "linearDamping": 0.05000000074505806,
+                    "angularDamping": 0.05000000074505806,
+                    "layer": 0
+                },
+                "Collider": {
+                    "shape": 0,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "halfExtents": [
+                        10.0,
+                        0.10000000149011612,
+                        10.0
+                    ],
+                    "radius": 0.5,
+                    "isSensor": 0
+                },
+                "Visible": {},
+                "ShadowVisible": {
+                    "cascadeMask": 255
+                }
+            }
+        },
+        {
+            "id": 1,
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        2.0,
+                        0.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ],
+                    "scale": [
+                        6.0,
+                        0.15000000596046449,
+                        1.0
+                    ]
+                },
+                "Mesh": {
+                    "type": "cube"
+                },
+                "Material": {
+                    "albedo": [
+                        0.550000011920929,
+                        0.550000011920929,
+                        0.5799999833106995,
+                        1.0
+                    ],
+                    "roughness": 0.699999988079071,
+                    "metallic": 0.10000000149011612,
+                    "emissiveScale": 0.0,
+                    "transparent": 0
+                },
+                "RigidBody": {
+                    "mass": 0.0,
+                    "type": 2,
+                    "friction": 0.800000011920929,
+                    "restitution": 0.10000000149011612,
+                    "linearDamping": 0.05000000074505806,
+                    "angularDamping": 0.05000000074505806,
+                    "layer": 0
+                },
+                "Collider": {
+                    "shape": 0,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "halfExtents": [
+                        3.0,
+                        0.07500000298023224,
+                        0.5
+                    ],
+                    "radius": 0.5,
+                    "isSensor": 0
+                },
+                "Visible": {},
+                "ShadowVisible": {
+                    "cascadeMask": 255
+                }
+            }
+        }
+    ]
+}

@@ -35,10 +35,16 @@ public:
 
 private:
     static constexpr int kCoinCount = 3;
+    static constexpr int kLevelCount = 2;
 
     void spawnCoin(engine::ecs::Registry& registry, int index);
     void spawnAllCoins(engine::ecs::Registry& registry);
+    void spawnBall(engine::ecs::Registry& registry);
     void resetLevel(engine::ecs::Registry& registry);
+    void loadLevel(engine::core::Engine& engine, engine::ecs::Registry& registry,
+                   int level);
+    void clearLevel(engine::ecs::Registry& registry);
+    void spawnPlankLevel(engine::ecs::Registry& registry);
     void spawnFigureEightFloor(engine::ecs::Registry& registry, uint32_t meshId, uint32_t matId);
     void applyLoadedAssets(engine::core::Engine& engine, engine::ecs::Registry& registry);
 
@@ -79,6 +85,9 @@ private:
     std::array<glm::vec3, kCoinCount> coinPositions_{};
     std::array<bool, kCoinCount> coinCollectedFlags_{};
     int coinsRemaining_ = kCoinCount;
+    int coinCount_ = 1;
+    int currentLevel_ = 0;
+    glm::vec3 ballStartPos_{-2.4f, 2.7f, 0.0f};
 
     // Track level-geometry entities for cleanup
     std::vector<engine::ecs::EntityID> levelEntities_;
@@ -92,6 +101,7 @@ private:
     // camera orientation and the movement-key axis.
     glm::vec2 smoothedFwd_{0.0f, -1.0f};
 
-    // Registry pointer used in onRender
+    // Engine/Registry pointers used in onRender
+    engine::core::Engine* engine_ = nullptr;
     engine::ecs::Registry* registry_ = nullptr;
 };

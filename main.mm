@@ -9,8 +9,8 @@ int main()
     SampleGame game;
     engine::game::GameRunner runner(game);
     return runner.run(engine::core::EngineDesc{
-        .windowWidth = 2560,
-        .windowHeight = 1600,
+        .windowWidth = 1920,
+        .windowHeight = 1080,
         .windowTitle = "My Game"
     });
 }

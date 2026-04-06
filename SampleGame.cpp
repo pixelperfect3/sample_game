@@ -408,35 +408,7 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint
 
 void SampleGame::spawnPlankLevel(Registry& registry)
 {
-    // Visible ground platform
-    {
-        EntityID ground = registry.createEntity();
-        TransformComponent tc{};
-        tc.position = {0.0f, -3.0f, 0.0f};
-        tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        tc.scale = {20.0f, 0.2f, 20.0f};
-        tc.flags = 1;
-        registry.emplace<TransformComponent>(ground, tc);
-        registry.emplace<WorldTransformComponent>(ground);
-        registry.emplace<MeshComponent>(ground, MeshComponent{cubeMeshId_});
-        registry.emplace<MaterialComponent>(ground, MaterialComponent{groundMatId_});
-        registry.emplace<VisibleTag>(ground);
-        registry.emplace<ShadowVisibleTag>(ground, ShadowVisibleTag{0xFF});
-
-        RigidBodyComponent rb;
-        rb.mass = 0.0f;
-        rb.type = BodyType::Kinematic;
-        rb.friction = 0.8f;
-        rb.restitution = 0.1f;
-        registry.emplace<RigidBodyComponent>(ground, rb);
-
-        ColliderComponent col;
-        col.shape = ColliderShape::Box;
-        col.halfExtents = {10.0f, 0.1f, 10.0f};
-        registry.emplace<ColliderComponent>(ground, col);
-    }
-
-    // Plank on top
+    // Plank only — no large ground plane
     {
         EntityID plank = registry.createEntity();
         TransformComponent tc{};

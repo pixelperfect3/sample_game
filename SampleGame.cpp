@@ -498,37 +498,19 @@ void SampleGame::spawnBall(Registry& registry)
 
 void SampleGame::clearLevel(Registry& registry)
 {
-    // Destroy coins
-    for (int i = 0; i < kCoinCount; ++i)
-    {
-        if (coinEntities_[i] != 0)
-            registry.destroyEntity(coinEntities_[i]);
-        coinEntities_[i] = 0;
-    }
+    // Destroy every entity in the registry — nothing persists across levels.
+    std::vector<EntityID> all;
+    registry.forEachEntity([&](EntityID e) { all.push_back(e); });
+    for (auto e : all)
+        registry.destroyEntity(e);
+
+    // Reset handles.
+    coinEntities_.fill(0);
     coinCollectedFlags_.fill(false);
     coinsRemaining_ = 0;
-
-    // Destroy ball
-    if (ballEntity_ != 0)
-    {
-        registry.destroyEntity(ballEntity_);
-        ballEntity_ = 0;
-    }
-
-    // Destroy level entities
-    for (auto eid : levelEntities_)
-    {
-        if (eid != 0)
-            registry.destroyEntity(eid);
-    }
+    ballEntity_ = 0;
+    groundEntity_ = 0;
     levelEntities_.clear();
-
-    // Destroy ground entity (safety floor)
-    if (groundEntity_ != 0)
-    {
-        registry.destroyEntity(groundEntity_);
-        groundEntity_ = 0;
-    }
 }
 
 void SampleGame::loadLevel(Engine& engine, Registry& registry, int level)

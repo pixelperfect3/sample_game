@@ -841,12 +841,10 @@ void SampleGame::onRender(Engine& engine)
             ImGui::Dummy(ImVec2(0, 50));
 
             ImGui::SetWindowFontScale(3.0f);
-            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.8f, 1.0f), "Levels");
-            ImGui::Separator();
             ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "1. The Plank  - Roll the ball to collect the coin");
+                "Roll the ball to collect all the coins.");
             ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "2. Figure 8   - Collect 3 coins on a ring track");
+                "Don't fall off the edge!");
 
             ImGui::Dummy(ImVec2(0, 30));
 

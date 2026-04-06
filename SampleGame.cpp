@@ -837,6 +837,31 @@ void SampleGame::onRender(Engine& engine)
                 if (engine_ && registry_)
                     loadLevel(*engine_, *registry_, 0);
             }
+
+            ImGui::Dummy(ImVec2(0, 50));
+
+            ImGui::SetWindowFontScale(3.0f);
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.8f, 1.0f), "Levels");
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "1. The Plank  - Roll the ball to collect the coin");
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "2. Figure 8   - Collect 3 coins on a ring track");
+
+            ImGui::Dummy(ImVec2(0, 30));
+
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.8f, 1.0f), "Controls");
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "W / Up      Move forward");
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "S / Down    Move backward");
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "A / Left    Move left");
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "D / Right   Move right");
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
+                "R           Reset level");
         }
         ImGui::End();
         return;  // skip 3D rendering

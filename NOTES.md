@@ -171,3 +171,89 @@ shader's tonemapping path still looks right. Not yet done.
 separate transparent pass. Setting `albedo.w < 1.0` has no visual effect
 today. Proper transparency would need a `TransparentTag` component + a new
 `submitTransparent()` method on the draw-call system. ~50-line Sama change.
+
+## UI migration to engine::ui + MSDF (2026-04)
+
+### What changed
+
+Ripped out ImGui for the in-game HUD and title screen. All game UI now
+goes through Sama's `engine::ui` system:
+
+- Title screen (Sample Game title, Start Game button, objective text,
+  Controls list) — retained-mode `UiCanvas` with `UiText` + `UiButton`
+  + `UiPanel` widgets.
+- Level-complete / You-Win screen + Next Level button — retained-mode
+  `UiCanvas` built lazily when `coinsRemaining_` crosses to 0 and
+  torn down when the next level loads.
+- Coin counter ("Coins Collected: N/M") — per-frame `UiDrawList`
+  `drawText` on the `kViewGameUi` bgfx view (immediate-mode is fine
+  since the string changes every frame anyway).
+
+All text rendering uses `engine::ui::MsdfFont` loaded from
+`assets/fonts/JetBrainsMono-msdf.{json,png}` (copied out of the Sama
+repo under `build/_deps/sama-src/assets/fonts/`). CMake gained
+`engine_ui` alongside `sama_3d` in the `target_link_libraries` line.
+
+### Why
+
+ImGui was being used at `SetWindowFontScale(10.0f)` / `12.0f` to get
+HUD-sized text, which upscales the 13-px bitmap font with nearest-
+neighbor filtering and looks pixelated at 1080p and awful at 4K.
+MSDF gives sharp edges at any draw size from one atlas, which is
+exactly the same reason Sama's editor uses it for its status overlay.
+Switching also lets the title screen use real styled buttons with
+hover/pressed states instead of ImGui's default look, and pulls the
+in-game UI into the same rendering path the engine already uses for
+everything else (one bgfx view, no separate ImGui context to manage).
+
+### Architecture
+
+`SampleGame` now owns:
+
+- `engine::ui::MsdfFont hudFont_` — loaded once in `onInit`, shutdown
+  in `onShutdown`.
+- `engine::ui::UiRenderer uiRenderer_` — init/shutdown alongside the
+  font; shared by every UI view this frame.
+- `engine::ui::UiDrawList hudDrawList_` — reused per frame for the
+  coin-counter text (cleared at the start of the draw, filled with a
+  single `drawText` call, submitted through `uiRenderer_.render`).
+- `std::unique_ptr<UiCanvas> titleCanvas_` — built once at first
+  render via `buildTitleCanvas()`, rebuilt on framebuffer resize.
+- `std::unique_ptr<UiCanvas> endLevelCanvas_` — built lazily by
+  `buildEndLevelCanvas(hasNextLevel)` when the player completes a
+  level, rebuilt if the `hasNextLevel` bit flips (final level → YOU
+  WIN, no button).
+
+Canvases are rendered on `engine::rendering::kViewGameUi` (view id 48,
+reserved for in-game HUDs) with `BGFX_CLEAR_NONE` so they composite
+over the 3D scene. Mouse events come from `engine.inputState()`
+multiplied by `engine.contentScaleX()/Y()` (logical → framebuffer
+pixels), synthesized into `UiEvent`s and dispatched to whichever
+canvas is active that frame.
+
+Font-load failure is handled by a `hudFontLoaded_` bool; the HUD
+silently draws nothing if loading fails (a warning is logged to
+stderr). Buttons are unreachable without the font, which is the same
+failure mode the editor's HUD overlay already has.
+
+### Gotchas
+
+- `UiCanvas` ctor takes `(width, height)` by value but there is no
+  default constructor, so the members are held as `std::unique_ptr`
+  and built on the first frame once we know `engine.fbWidth()`. Any
+  future framebuffer resize rebuilds `titleCanvas_` by simply
+  reconstructing it in place — the builder functions are idempotent.
+- `engine::input::InputState::mouseX()` is in **logical window
+  pixels**, not framebuffer pixels. On a retina display you must
+  multiply by `engine.contentScaleX()/Y()` before sending the
+  coordinate to `canvas.dispatchEvent`, otherwise hit-testing is off
+  by 2x on Mac. `apps/ui_test/UiTestApp.cpp::dispatchMouseEvents`
+  does the same thing.
+- `UiText` widgets measure and lay out their own rects; font size
+  and anchor+offset pair must be set before the first `update()`
+  or nothing shows up. Setting `font = &hudFont_` on each widget is
+  required even though the canvas has no global font pointer.
+- `math::Vec*` lives in `engine::math`, not the global `math`
+  namespace used by some glm-heavy code in this project. I first
+  tried `math::Vec4{...}` and got "undeclared identifier 'math'"
+  before qualifying.

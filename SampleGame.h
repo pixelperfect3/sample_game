@@ -18,6 +18,9 @@
 #include "engine/rendering/IblResources.h"
 #include "engine/rendering/systems/DrawCallBuildSystem.h"
 #include "engine/threading/ThreadPool.h"
+#include "engine/ui/MsdfFont.h"
+#include "engine/ui/UiDrawList.h"
+#include "engine/ui/UiRenderer.h"
 
 class SampleGame : public engine::game::IGame
 {
@@ -105,4 +108,10 @@ private:
     // Engine/Registry pointers used in onRender
     engine::core::Engine* engine_ = nullptr;
     engine::ecs::Registry* registry_ = nullptr;
+
+    // UI (MSDF font + renderer + per-frame draw list for the HUD)
+    engine::ui::MsdfFont hudFont_;
+    engine::ui::UiRenderer uiRenderer_;
+    engine::ui::UiDrawList hudDrawList_;
+    bool hudFontLoaded_ = false;
 };

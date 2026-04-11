@@ -222,6 +222,18 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     // ---- IBL --------------------------------------------------------------
     ibl_.generateDefault();
 
+    // ---- UI (MSDF font + renderer) ---------------------------------------
+    if (hudFont_.loadFromFile("assets/fonts/JetBrainsMono-msdf.json",
+                              "assets/fonts/JetBrainsMono-msdf.png"))
+    {
+        hudFontLoaded_ = true;
+    }
+    else
+    {
+        std::fprintf(stderr, "SampleGame: failed to load MSDF font\n");
+    }
+    uiRenderer_.init();
+
     // ---- Shared cube mesh -------------------------------------------------
     MeshData cubeData = makeCubeMeshData();
     Mesh cubeMesh = buildMesh(cubeData);
@@ -924,54 +936,102 @@ void SampleGame::onRender(Engine& engine)
     drawCallSys_.update(*registry_, engine.resources(), engine.pbrProgram(), engine.uniforms(),
                         frame);
 
-    // ---- HUD text (top-left, large) ---------------------------------------
+    // ---- HUD --------------------------------------------------------------
     const int collected = coinCount_ - coinsRemaining_;
     const bool levelComplete = (coinsRemaining_ == 0);
     const bool hasNextLevel = (currentLevel_ < kLevelCount - 1);
 
-    ImGui::SetNextWindowPos(ImVec2(80.0f, 60.0f), ImGuiCond_Always);
-    // Allow input when showing "Next Level" button; otherwise block input.
-    ImGuiWindowFlags hudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                ImGuiWindowFlags_NoBackground |
-                                ImGuiWindowFlags_NoSavedSettings |
-                                ImGuiWindowFlags_AlwaysAutoResize;
-    if (!levelComplete || !hasNextLevel)
-        hudFlags |= ImGuiWindowFlags_NoInputs;
-
-    if (ImGui::Begin("##hud", nullptr, hudFlags))
+    // Render HUD text via MSDF UiDrawList when the font is loaded.
+    if (hudFontLoaded_)
     {
-        ImGui::SetWindowFontScale(10.0f);
+        hudDrawList_.clear();
+
+        const engine::math::Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+        const engine::math::Vec4 yellow{1.0f, 0.95f, 0.3f, 1.0f};
+        const engine::math::Vec2 hudPos{80.0f, 60.0f};
+        const float hudSize = 72.0f;
+
         if (levelComplete)
         {
             if (hasNextLevel)
             {
-                ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f),
-                                   "LEVEL COMPLETE!");
-                ImGui::SetWindowFontScale(5.0f);
-                if (ImGui::Button("Next Level"))
-                {
-                    if (engine_ && registry_)
-                        loadLevel(*engine_, *registry_, currentLevel_ + 1);
-                }
+                hudDrawList_.drawText(hudPos, "LEVEL COMPLETE!", yellow, &hudFont_, hudSize);
             }
             else
             {
-                ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f),
-                                   "YOU WIN!");
+                hudDrawList_.drawText(hudPos, "YOU WIN!", yellow, &hudFont_, hudSize);
             }
         }
         else
         {
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f),
-                               "Coins Collected: %d/%d",
-                               collected, coinCount_);
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
+            hudDrawList_.drawText(hudPos, buf, white, &hudFont_, hudSize);
         }
+
+        const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
+        bgfx::setViewName(hudView, "HUD");
+        bgfx::setViewRect(hudView, 0, 0, W, H);
+        bgfx::setViewClear(hudView, BGFX_CLEAR_NONE);
+        bgfx::touch(hudView);
+        uiRenderer_.render(hudDrawList_, hudView, W, H);
     }
-    ImGui::End();
+    else
+    {
+        // Fallback: render the HUD text via ImGui when the MSDF font failed.
+        ImGui::SetNextWindowPos(ImVec2(80.0f, 60.0f), ImGuiCond_Always);
+        ImGuiWindowFlags hudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                    ImGuiWindowFlags_NoBackground |
+                                    ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_AlwaysAutoResize |
+                                    ImGuiWindowFlags_NoInputs;
+        if (ImGui::Begin("##hud_fallback", nullptr, hudFlags))
+        {
+            ImGui::SetWindowFontScale(10.0f);
+            if (levelComplete)
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f),
+                                   hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!");
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f),
+                                   "Coins Collected: %d/%d",
+                                   collected, coinCount_);
+            }
+        }
+        ImGui::End();
+    }
+
+    // Next-level button is still ImGui for now (migrated in step 3).
+    if (levelComplete && hasNextLevel)
+    {
+        ImGui::SetNextWindowPos(ImVec2(80.0f, 160.0f), ImGuiCond_Always);
+        ImGuiWindowFlags btnFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                    ImGuiWindowFlags_NoBackground |
+                                    ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_AlwaysAutoResize;
+        if (ImGui::Begin("##hud_btn", nullptr, btnFlags))
+        {
+            ImGui::SetWindowFontScale(5.0f);
+            if (ImGui::Button("Next Level"))
+            {
+                if (engine_ && registry_)
+                    loadLevel(*engine_, *registry_, currentLevel_ + 1);
+            }
+        }
+        ImGui::End();
+    }
 }
 
 void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)
 {
+    uiRenderer_.shutdown();
+    if (hudFontLoaded_)
+    {
+        hudFont_.shutdown();
+        hudFontLoaded_ = false;
+    }
     ibl_.shutdown();
     physics_.shutdown();
     audio_.shutdown();

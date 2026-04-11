@@ -821,6 +821,7 @@ void SampleGame::onRender(Engine& engine)
     {
         canvasW_ = W;
         canvasH_ = H;
+        canvasDpi_ = engine.contentScaleX() > 0.f ? engine.contentScaleX() : 1.0f;
         if (!titleCanvas_)
             titleCanvas_ = std::make_unique<engine::ui::UiCanvas>(W, H);
         else
@@ -919,13 +920,17 @@ void SampleGame::onRender(Engine& engine)
     const bool hasNextLevel = (currentLevel_ < kLevelCount - 1);
 
     // Per-frame coin counter via UiDrawList (MSDF).
+    // Font sizes and pixel offsets are in physical framebuffer pixels, so
+    // multiply by the DPI scale to keep the visual size consistent across
+    // retina (contentScale≈2) and non-retina (contentScale≈1) displays.
+    const float dpi = engine.contentScaleX() > 0.f ? engine.contentScaleX() : 1.f;
     if (hudFontLoaded_ && !levelComplete)
     {
         hudDrawList_.clear();
 
         const engine::math::Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
-        const engine::math::Vec2 hudPos{80.0f, 60.0f};
-        const float hudSize = 72.0f;
+        const engine::math::Vec2 hudPos{80.0f * dpi, 60.0f * dpi};
+        const float hudSize = 96.0f * dpi;
 
         char buf[64];
         std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
@@ -981,6 +986,8 @@ void SampleGame::buildTitleCanvas()
     // Rebuild from scratch.
     titleCanvas_ = std::make_unique<UiCanvas>(canvasW_, canvasH_);
 
+    const float s = canvasDpi_;  // DPI scale (2 on retina, 1 elsewhere)
+
     auto* root = titleCanvas_->root();
 
     // Full-screen background panel.
@@ -998,11 +1005,11 @@ void SampleGame::buildTitleCanvas()
     // "Sample Game" title — centered, high on screen.
     auto* title = titleCanvas_->createNode<UiText>("title");
     title->anchor = {{0.f, 0.f}, {1.f, 0.f}};
-    title->offsetMin = {0.f, 80.f};
-    title->offsetMax = {0.f, 220.f};
+    title->offsetMin = {0.f, 80.f * s};
+    title->offsetMax = {0.f, 260.f * s};
     title->text = "Sample Game";
     title->font = &hudFont_;
-    title->fontSize = 120.f;
+    title->fontSize = 160.f * s;
     title->color = yellow;
     title->align = TextAlign::Center;
     bg->addChild(title);
@@ -1010,22 +1017,22 @@ void SampleGame::buildTitleCanvas()
     // Objective lines
     auto* obj1 = titleCanvas_->createNode<UiText>("obj1");
     obj1->anchor = {{0.f, 0.f}, {1.f, 0.f}};
-    obj1->offsetMin = {0.f, 260.f};
-    obj1->offsetMax = {0.f, 300.f};
+    obj1->offsetMin = {0.f, 300.f * s};
+    obj1->offsetMax = {0.f, 348.f * s};
     obj1->text = "Roll the ball to collect all the coins.";
     obj1->font = &hudFont_;
-    obj1->fontSize = 36.f;
+    obj1->fontSize = 42.f * s;
     obj1->color = light;
     obj1->align = TextAlign::Center;
     bg->addChild(obj1);
 
     auto* obj2 = titleCanvas_->createNode<UiText>("obj2");
     obj2->anchor = {{0.f, 0.f}, {1.f, 0.f}};
-    obj2->offsetMin = {0.f, 310.f};
-    obj2->offsetMax = {0.f, 350.f};
+    obj2->offsetMin = {0.f, 358.f * s};
+    obj2->offsetMax = {0.f, 406.f * s};
     obj2->text = "Don't fall off the edge!";
     obj2->font = &hudFont_;
-    obj2->fontSize = 36.f;
+    obj2->fontSize = 42.f * s;
     obj2->color = light;
     obj2->align = TextAlign::Center;
     bg->addChild(obj2);
@@ -1033,16 +1040,16 @@ void SampleGame::buildTitleCanvas()
     // Start Game button — centered
     auto* startBtn = titleCanvas_->createNode<UiButton>("startBtn");
     startBtn->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
-    startBtn->offsetMin = {-200.f, -40.f};
-    startBtn->offsetMax = {200.f, 40.f};
+    startBtn->offsetMin = {-260.f * s, -60.f * s};
+    startBtn->offsetMax = { 260.f * s,  60.f * s};
     startBtn->label = "Start Game";
     startBtn->font = &hudFont_;
-    startBtn->fontSize = 40.f;
+    startBtn->fontSize = 56.f * s;
     startBtn->normalColor = {0.20f, 0.20f, 0.32f, 1.0f};
     startBtn->hoverColor = {0.32f, 0.32f, 0.45f, 1.0f};
     startBtn->pressedColor = {0.12f, 0.12f, 0.20f, 1.0f};
     startBtn->textColor = {1.f, 1.f, 1.f, 1.f};
-    startBtn->cornerRadius = 8.f;
+    startBtn->cornerRadius = 10.f * s;
     startBtn->onClick = [this](engine::ui::UiNode&)
     {
         showTitleScreen_ = false;
@@ -1054,11 +1061,11 @@ void SampleGame::buildTitleCanvas()
     // "Controls" label
     auto* ctrlLabel = titleCanvas_->createNode<UiText>("ctrlLabel");
     ctrlLabel->anchor = {{0.f, 0.5f}, {1.f, 0.5f}};
-    ctrlLabel->offsetMin = {0.f, 90.f};
-    ctrlLabel->offsetMax = {0.f, 130.f};
+    ctrlLabel->offsetMin = {0.f, 130.f * s};
+    ctrlLabel->offsetMax = {0.f, 178.f * s};
     ctrlLabel->text = "Controls";
     ctrlLabel->font = &hudFont_;
-    ctrlLabel->fontSize = 32.f;
+    ctrlLabel->fontSize = 40.f * s;
     ctrlLabel->color = lightBlue;
     ctrlLabel->align = TextAlign::Center;
     bg->addChild(ctrlLabel);
@@ -1071,20 +1078,20 @@ void SampleGame::buildTitleCanvas()
         "D / Right   Move right",
         "R           Reset level",
     };
-    float y = 140.f;
+    float y = 190.f * s;
     for (const char* line : ctrlLines)
     {
         auto* t = titleCanvas_->createNode<UiText>("ctrl");
         t->anchor = {{0.f, 0.5f}, {1.f, 0.5f}};
         t->offsetMin = {0.f, y};
-        t->offsetMax = {0.f, y + 32.f};
+        t->offsetMax = {0.f, y + 36.f * s};
         t->text = line;
         t->font = &hudFont_;
-        t->fontSize = 26.f;
+        t->fontSize = 32.f * s;
         t->color = light;
         t->align = TextAlign::Center;
         bg->addChild(t);
-        y += 38.f;
+        y += 46.f * s;
     }
 }
 
@@ -1095,6 +1102,8 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
     endLevelCanvas_ = std::make_unique<UiCanvas>(canvasW_, canvasH_);
     endLevelCanvasBuilt_ = true;
     endLevelCanvasHasNext_ = hasNextLevel;
+
+    const float s = canvasDpi_;  // DPI scale
 
     auto* root = endLevelCanvas_->root();
 
@@ -1107,11 +1116,11 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
 
     auto* msg = endLevelCanvas_->createNode<UiText>("endMsg");
     msg->anchor = {{0.f, 0.f}, {0.f, 0.f}};
-    msg->offsetMin = {80.f, 60.f};
-    msg->offsetMax = {1400.f, 160.f};
+    msg->offsetMin = {80.f * s, 60.f * s};
+    msg->offsetMax = {1800.f * s, 200.f * s};
     msg->text = hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!";
     msg->font = &hudFont_;
-    msg->fontSize = 72.f;
+    msg->fontSize = 96.f * s;
     msg->color = yellow;
     msg->align = TextAlign::Left;
     bg->addChild(msg);
@@ -1120,16 +1129,16 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
     {
         auto* nextBtn = endLevelCanvas_->createNode<UiButton>("nextBtn");
         nextBtn->anchor = {{0.f, 0.f}, {0.f, 0.f}};
-        nextBtn->offsetMin = {80.f, 200.f};
-        nextBtn->offsetMax = {440.f, 270.f};
+        nextBtn->offsetMin = {80.f * s, 240.f * s};
+        nextBtn->offsetMax = {520.f * s, 330.f * s};
         nextBtn->label = "Next Level";
         nextBtn->font = &hudFont_;
-        nextBtn->fontSize = 36.f;
+        nextBtn->fontSize = 48.f * s;
         nextBtn->normalColor = {0.20f, 0.20f, 0.32f, 1.0f};
         nextBtn->hoverColor = {0.32f, 0.32f, 0.45f, 1.0f};
         nextBtn->pressedColor = {0.12f, 0.12f, 0.20f, 1.0f};
         nextBtn->textColor = {1.f, 1.f, 1.f, 1.f};
-        nextBtn->cornerRadius = 8.f;
+        nextBtn->cornerRadius = 10.f * s;
         nextBtn->onClick = [this](engine::ui::UiNode&)
         {
             if (engine_ && registry_)

@@ -122,6 +122,7 @@ private:
     std::unique_ptr<engine::ui::UiCanvas> endLevelCanvas_;
     uint16_t canvasW_ = 0;
     uint16_t canvasH_ = 0;
+    float canvasDpi_ = 1.0f;  // contentScale — used to scale pixel sizes for retina
     bool endLevelCanvasBuilt_ = false;
     bool endLevelCanvasHasNext_ = false;
     float prevMouseX_ = 0.f;

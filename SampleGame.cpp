@@ -1037,19 +1037,38 @@ void SampleGame::buildTitleCanvas()
     obj2->align = TextAlign::Center;
     bg->addChild(obj2);
 
-    // Start Game button — centered
+    // Start Game button group — a drop shadow + button + top highlight,
+    // all sharing the same centre and footprint. Siblings added to `bg` in
+    // draw order (shadow first, button next, highlight stripe on top).
+    const float btnHalfW = 180.f * s;
+    const float btnHalfH = 52.f * s;
+    const float btnRadius = 22.f * s;
+
+    // (1) Drop shadow — slightly larger, offset down-right, semi-transparent.
+    auto* shadow = titleCanvas_->createNode<UiPanel>("startBtnShadow");
+    shadow->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
+    shadow->offsetMin = {-btnHalfW - 4.f * s, -btnHalfH + 8.f * s};
+    shadow->offsetMax = { btnHalfW + 4.f * s,  btnHalfH + 16.f * s};
+    shadow->color = {0.0f, 0.0f, 0.05f, 0.45f};
+    shadow->cornerRadius = btnRadius + 4.f * s;
+    shadow->interactable = false;
+    bg->addChild(shadow);
+
+    // (2) The clickable button itself.
     auto* startBtn = titleCanvas_->createNode<UiButton>("startBtn");
     startBtn->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
-    startBtn->offsetMin = {-140.f * s, -30.f * s};
-    startBtn->offsetMax = { 140.f * s,  30.f * s};
+    startBtn->offsetMin = {-btnHalfW, -btnHalfH};
+    startBtn->offsetMax = { btnHalfW,  btnHalfH};
     startBtn->label = "Start Game";
     startBtn->font = &hudFont_;
-    startBtn->fontSize = 26.f * s;
-    startBtn->normalColor = {0.20f, 0.20f, 0.32f, 1.0f};
-    startBtn->hoverColor = {0.32f, 0.32f, 0.45f, 1.0f};
-    startBtn->pressedColor = {0.12f, 0.12f, 0.20f, 1.0f};
-    startBtn->textColor = {1.f, 1.f, 1.f, 1.f};
-    startBtn->cornerRadius = 8.f * s;
+    startBtn->fontSize = 40.f * s;
+    // Rich blue-purple gradient fake: main fill is the mid tone,
+    // highlight stripe on top brightens it, shadow below deepens it.
+    startBtn->normalColor  = {0.28f, 0.36f, 0.72f, 1.0f};
+    startBtn->hoverColor   = {0.40f, 0.52f, 0.95f, 1.0f};
+    startBtn->pressedColor = {0.18f, 0.24f, 0.56f, 1.0f};
+    startBtn->textColor    = {1.0f, 1.0f, 1.0f, 1.0f};
+    startBtn->cornerRadius = btnRadius;
     startBtn->onClick = [this](engine::ui::UiNode&)
     {
         showTitleScreen_ = false;
@@ -1057,6 +1076,20 @@ void SampleGame::buildTitleCanvas()
             loadLevel(*engine_, *registry_, 0);
     };
     bg->addChild(startBtn);
+
+    // (3) Top highlight stripe — thin lighter band at the top of the button
+    // to fake a gradient "lit from above" look. Non-interactive, drawn over
+    // the button fill but under the button's text (UiButton draws its text
+    // last inside its own onDraw, so the stripe ends up visually under the
+    // text since it's a sibling drawn immediately after the button).
+    auto* highlight = titleCanvas_->createNode<UiPanel>("startBtnHighlight");
+    highlight->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
+    highlight->offsetMin = {-btnHalfW + 6.f * s, -btnHalfH + 6.f * s};
+    highlight->offsetMax = { btnHalfW - 6.f * s, -btnHalfH + 24.f * s};
+    highlight->color = {1.0f, 1.0f, 1.0f, 0.12f};
+    highlight->cornerRadius = btnRadius - 4.f * s;
+    highlight->interactable = false;
+    bg->addChild(highlight);
 
     // "Controls" label
     auto* ctrlLabel = titleCanvas_->createNode<UiText>("ctrlLabel");
@@ -1127,24 +1160,49 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
 
     if (hasNextLevel)
     {
+        // Same composed button recipe as the title screen's Start Game.
+        const float btnLeft = 40.f * s;
+        const float btnTop = 110.f * s;
+        const float btnRight = 280.f * s;
+        const float btnBottom = 190.f * s;
+        const float btnRadius = 18.f * s;
+
+        auto* shadow = endLevelCanvas_->createNode<UiPanel>("nextBtnShadow");
+        shadow->anchor = {{0.f, 0.f}, {0.f, 0.f}};
+        shadow->offsetMin = {btnLeft - 4.f * s, btnTop + 8.f * s};
+        shadow->offsetMax = {btnRight + 4.f * s, btnBottom + 16.f * s};
+        shadow->color = {0.0f, 0.0f, 0.05f, 0.45f};
+        shadow->cornerRadius = btnRadius + 4.f * s;
+        shadow->interactable = false;
+        bg->addChild(shadow);
+
         auto* nextBtn = endLevelCanvas_->createNode<UiButton>("nextBtn");
         nextBtn->anchor = {{0.f, 0.f}, {0.f, 0.f}};
-        nextBtn->offsetMin = {40.f * s, 110.f * s};
-        nextBtn->offsetMax = {240.f * s, 160.f * s};
+        nextBtn->offsetMin = {btnLeft, btnTop};
+        nextBtn->offsetMax = {btnRight, btnBottom};
         nextBtn->label = "Next Level";
         nextBtn->font = &hudFont_;
-        nextBtn->fontSize = 22.f * s;
-        nextBtn->normalColor = {0.20f, 0.20f, 0.32f, 1.0f};
-        nextBtn->hoverColor = {0.32f, 0.32f, 0.45f, 1.0f};
-        nextBtn->pressedColor = {0.12f, 0.12f, 0.20f, 1.0f};
-        nextBtn->textColor = {1.f, 1.f, 1.f, 1.f};
-        nextBtn->cornerRadius = 6.f * s;
+        nextBtn->fontSize = 32.f * s;
+        nextBtn->normalColor  = {0.28f, 0.36f, 0.72f, 1.0f};
+        nextBtn->hoverColor   = {0.40f, 0.52f, 0.95f, 1.0f};
+        nextBtn->pressedColor = {0.18f, 0.24f, 0.56f, 1.0f};
+        nextBtn->textColor    = {1.0f, 1.0f, 1.0f, 1.0f};
+        nextBtn->cornerRadius = btnRadius;
         nextBtn->onClick = [this](engine::ui::UiNode&)
         {
             if (engine_ && registry_)
                 loadLevel(*engine_, *registry_, currentLevel_ + 1);
         };
         bg->addChild(nextBtn);
+
+        auto* highlight = endLevelCanvas_->createNode<UiPanel>("nextBtnHighlight");
+        highlight->anchor = {{0.f, 0.f}, {0.f, 0.f}};
+        highlight->offsetMin = {btnLeft + 6.f * s, btnTop + 6.f * s};
+        highlight->offsetMax = {btnRight - 6.f * s, btnTop + 22.f * s};
+        highlight->color = {1.0f, 1.0f, 1.0f, 0.12f};
+        highlight->cornerRadius = btnRadius - 4.f * s;
+        highlight->interactable = false;
+        bg->addChild(highlight);
     }
 }
 

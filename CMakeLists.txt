@@ -13,7 +13,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(sama)                                                                                                                                                                                                                   
                                         
 add_executable(sample_game main.mm SampleGame.cpp)                                                                                                                                                                                                         
-target_link_libraries(sample_game PRIVATE sama_3d)                                                                                                                                                                                                     
+target_link_libraries(sample_game PRIVATE sama_3d engine_ui)                                                                                                                                                                                                     
                                               
 if(APPLE)                                                                                                                                                                                                                                          
     target_link_libraries(sample_game PRIVATE                                                                                                                                                                                                          

@@ -847,7 +847,6 @@ void SampleGame::onRender(Engine& engine)
 
             const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
             bgfx::setViewName(uiView, "TitleUI");
-            bgfx::setViewMode(uiView, bgfx::ViewMode::Sequential);
             bgfx::setViewRect(uiView, 0, 0, W, H);
             bgfx::setViewClear(uiView, BGFX_CLEAR_NONE);
             bgfx::touch(uiView);
@@ -939,7 +938,6 @@ void SampleGame::onRender(Engine& engine)
 
         const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
         bgfx::setViewName(hudView, "HUD");
-        bgfx::setViewMode(hudView, bgfx::ViewMode::Sequential);
         bgfx::setViewRect(hudView, 0, 0, W, H);
         bgfx::setViewClear(hudView, BGFX_CLEAR_NONE);
         bgfx::touch(hudView);
@@ -962,7 +960,6 @@ void SampleGame::onRender(Engine& engine)
 
             const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
             bgfx::setViewName(uiView, "HUD");
-            bgfx::setViewMode(uiView, bgfx::ViewMode::Sequential);
             bgfx::setViewRect(uiView, 0, 0, W, H);
             bgfx::setViewClear(uiView, BGFX_CLEAR_NONE);
             bgfx::touch(uiView);

@@ -22,7 +22,10 @@
 #include "engine/rendering/ViewIds.h"
 #include "engine/scene/SceneSerializer.h"
 #include "engine/scene/TransformSystem.h"
-#include "imgui.h"
+#include "engine/ui/UiEvent.h"
+#include "engine/ui/widgets/UiButton.h"
+#include "engine/ui/widgets/UiPanel.h"
+#include "engine/ui/widgets/UiText.h"
 
 using namespace engine::assets;
 using namespace engine::core;
@@ -813,67 +816,41 @@ void SampleGame::onRender(Engine& engine)
     const float fbW = static_cast<float>(W);
     const float fbH = static_cast<float>(H);
 
+    // Ensure canvases exist and are sized to the current framebuffer.
+    if (!titleCanvas_ || canvasW_ != W || canvasH_ != H)
+    {
+        canvasW_ = W;
+        canvasH_ = H;
+        if (!titleCanvas_)
+            titleCanvas_ = std::make_unique<engine::ui::UiCanvas>(W, H);
+        else
+            titleCanvas_->setScreenSize(W, H);
+        buildTitleCanvas();
+
+        if (endLevelCanvas_)
+            endLevelCanvas_->setScreenSize(W, H);
+    }
+
     // ---- Title screen -----------------------------------------------------
     if (showTitleScreen_)
     {
-        // Just clear the screen and show the title UI.
+        // Just clear the screen.
         RenderPass(kViewOpaque)
             .rect(0, 0, W, H)
             .clearColorAndDepth(0x1A1A2EFF);
 
-        const float centerX = fbW * 0.5f;
-        const float centerY = fbH * 0.35f;
-
-        ImGui::SetNextWindowPos(ImVec2(centerX, centerY), ImGuiCond_Always,
-                                ImVec2(0.5f, 0.5f));
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                 ImGuiWindowFlags_NoBackground |
-                                 ImGuiWindowFlags_NoSavedSettings |
-                                 ImGuiWindowFlags_AlwaysAutoResize;
-        if (ImGui::Begin("##title", nullptr, flags))
+        if (hudFontLoaded_ && titleCanvas_)
         {
-            ImGui::SetWindowFontScale(12.0f);
-            ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f), "Sample Game");
+            dispatchMouseEvents(engine, *titleCanvas_);
+            titleCanvas_->update();
 
-            ImGui::SetWindowFontScale(6.0f);
-            ImGui::Dummy(ImVec2(0, 40));
-
-            // Centre the button by calculating its width.
-            const float buttonW = 400.0f;
-            const float buttonH = 80.0f;
-            ImGui::SetCursorPosX(
-                (ImGui::GetWindowWidth() - buttonW) * 0.5f);
-            if (ImGui::Button("Start Game", ImVec2(buttonW, buttonH)))
-            {
-                showTitleScreen_ = false;
-                if (engine_ && registry_)
-                    loadLevel(*engine_, *registry_, 0);
-            }
-
-            ImGui::Dummy(ImVec2(0, 50));
-
-            ImGui::SetWindowFontScale(3.0f);
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "Roll the ball to collect all the coins.");
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "Don't fall off the edge!");
-
-            ImGui::Dummy(ImVec2(0, 30));
-
-            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.8f, 1.0f), "Controls");
-            ImGui::Separator();
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "W / Up      Move forward");
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "S / Down    Move backward");
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "A / Left    Move left");
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "D / Right   Move right");
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f),
-                "R           Reset level");
+            const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
+            bgfx::setViewName(uiView, "TitleUI");
+            bgfx::setViewRect(uiView, 0, 0, W, H);
+            bgfx::setViewClear(uiView, BGFX_CLEAR_NONE);
+            bgfx::touch(uiView);
+            uiRenderer_.render(titleCanvas_->drawList(), uiView, W, H);
         }
-        ImGui::End();
         return;  // skip 3D rendering
     }
 
@@ -941,33 +918,18 @@ void SampleGame::onRender(Engine& engine)
     const bool levelComplete = (coinsRemaining_ == 0);
     const bool hasNextLevel = (currentLevel_ < kLevelCount - 1);
 
-    // Render HUD text via MSDF UiDrawList when the font is loaded.
-    if (hudFontLoaded_)
+    // Per-frame coin counter via UiDrawList (MSDF).
+    if (hudFontLoaded_ && !levelComplete)
     {
         hudDrawList_.clear();
 
         const engine::math::Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
-        const engine::math::Vec4 yellow{1.0f, 0.95f, 0.3f, 1.0f};
         const engine::math::Vec2 hudPos{80.0f, 60.0f};
         const float hudSize = 72.0f;
 
-        if (levelComplete)
-        {
-            if (hasNextLevel)
-            {
-                hudDrawList_.drawText(hudPos, "LEVEL COMPLETE!", yellow, &hudFont_, hudSize);
-            }
-            else
-            {
-                hudDrawList_.drawText(hudPos, "YOU WIN!", yellow, &hudFont_, hudSize);
-            }
-        }
-        else
-        {
-            char buf[64];
-            std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
-            hudDrawList_.drawText(hudPos, buf, white, &hudFont_, hudSize);
-        }
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
+        hudDrawList_.drawText(hudPos, buf, white, &hudFont_, hudSize);
 
         const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
         bgfx::setViewName(hudView, "HUD");
@@ -976,52 +938,244 @@ void SampleGame::onRender(Engine& engine)
         bgfx::touch(hudView);
         uiRenderer_.render(hudDrawList_, hudView, W, H);
     }
+
+    // Level-complete / you-win canvas: built lazily when level completes,
+    // discarded when a new level starts.
+    if (hudFontLoaded_ && levelComplete)
+    {
+        if (!endLevelCanvasBuilt_ || endLevelCanvasHasNext_ != hasNextLevel)
+        {
+            buildEndLevelCanvas(hasNextLevel);
+        }
+
+        if (endLevelCanvas_)
+        {
+            dispatchMouseEvents(engine, *endLevelCanvas_);
+            endLevelCanvas_->update();
+
+            const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
+            bgfx::setViewName(uiView, "HUD");
+            bgfx::setViewRect(uiView, 0, 0, W, H);
+            bgfx::setViewClear(uiView, BGFX_CLEAR_NONE);
+            bgfx::touch(uiView);
+            uiRenderer_.render(endLevelCanvas_->drawList(), uiView, W, H);
+        }
+    }
     else
     {
-        // Fallback: render the HUD text via ImGui when the MSDF font failed.
-        ImGui::SetNextWindowPos(ImVec2(80.0f, 60.0f), ImGuiCond_Always);
-        ImGuiWindowFlags hudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                    ImGuiWindowFlags_NoBackground |
-                                    ImGuiWindowFlags_NoSavedSettings |
-                                    ImGuiWindowFlags_AlwaysAutoResize |
-                                    ImGuiWindowFlags_NoInputs;
-        if (ImGui::Begin("##hud_fallback", nullptr, hudFlags))
+        // Level not complete -> ensure the end-level canvas is rebuilt next
+        // time we finish a level.
+        endLevelCanvasBuilt_ = false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// UI construction (retained-mode UiCanvas widgets)
+// ---------------------------------------------------------------------------
+
+void SampleGame::buildTitleCanvas()
+{
+    using namespace engine::ui;
+    if (!titleCanvas_) return;
+
+    // Rebuild from scratch.
+    titleCanvas_ = std::make_unique<UiCanvas>(canvasW_, canvasH_);
+
+    auto* root = titleCanvas_->root();
+
+    // Full-screen background panel.
+    auto* bg = titleCanvas_->createNode<UiPanel>("titleBg");
+    bg->anchor = {{0.f, 0.f}, {1.f, 1.f}};
+    bg->offsetMin = {0.f, 0.f};
+    bg->offsetMax = {0.f, 0.f};
+    bg->color = {0.10f, 0.10f, 0.18f, 0.0f};  // transparent; scene clears to 0x1A1A2E
+    root->addChild(bg);
+
+    const engine::math::Vec4 yellow{1.0f, 0.95f, 0.3f, 1.0f};
+    const engine::math::Vec4 light{0.9f, 0.9f, 0.9f, 1.0f};
+    const engine::math::Vec4 lightBlue{0.7f, 0.7f, 0.8f, 1.0f};
+
+    // "Sample Game" title — centered, high on screen.
+    auto* title = titleCanvas_->createNode<UiText>("title");
+    title->anchor = {{0.f, 0.f}, {1.f, 0.f}};
+    title->offsetMin = {0.f, 80.f};
+    title->offsetMax = {0.f, 220.f};
+    title->text = "Sample Game";
+    title->font = &hudFont_;
+    title->fontSize = 120.f;
+    title->color = yellow;
+    title->align = TextAlign::Center;
+    bg->addChild(title);
+
+    // Objective lines
+    auto* obj1 = titleCanvas_->createNode<UiText>("obj1");
+    obj1->anchor = {{0.f, 0.f}, {1.f, 0.f}};
+    obj1->offsetMin = {0.f, 260.f};
+    obj1->offsetMax = {0.f, 300.f};
+    obj1->text = "Roll the ball to collect all the coins.";
+    obj1->font = &hudFont_;
+    obj1->fontSize = 36.f;
+    obj1->color = light;
+    obj1->align = TextAlign::Center;
+    bg->addChild(obj1);
+
+    auto* obj2 = titleCanvas_->createNode<UiText>("obj2");
+    obj2->anchor = {{0.f, 0.f}, {1.f, 0.f}};
+    obj2->offsetMin = {0.f, 310.f};
+    obj2->offsetMax = {0.f, 350.f};
+    obj2->text = "Don't fall off the edge!";
+    obj2->font = &hudFont_;
+    obj2->fontSize = 36.f;
+    obj2->color = light;
+    obj2->align = TextAlign::Center;
+    bg->addChild(obj2);
+
+    // Start Game button — centered
+    auto* startBtn = titleCanvas_->createNode<UiButton>("startBtn");
+    startBtn->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
+    startBtn->offsetMin = {-200.f, -40.f};
+    startBtn->offsetMax = {200.f, 40.f};
+    startBtn->label = "Start Game";
+    startBtn->font = &hudFont_;
+    startBtn->fontSize = 40.f;
+    startBtn->normalColor = {0.20f, 0.20f, 0.32f, 1.0f};
+    startBtn->hoverColor = {0.32f, 0.32f, 0.45f, 1.0f};
+    startBtn->pressedColor = {0.12f, 0.12f, 0.20f, 1.0f};
+    startBtn->textColor = {1.f, 1.f, 1.f, 1.f};
+    startBtn->cornerRadius = 8.f;
+    startBtn->onClick = [this](engine::ui::UiNode&)
+    {
+        showTitleScreen_ = false;
+        if (engine_ && registry_)
+            loadLevel(*engine_, *registry_, 0);
+    };
+    bg->addChild(startBtn);
+
+    // "Controls" label
+    auto* ctrlLabel = titleCanvas_->createNode<UiText>("ctrlLabel");
+    ctrlLabel->anchor = {{0.f, 0.5f}, {1.f, 0.5f}};
+    ctrlLabel->offsetMin = {0.f, 90.f};
+    ctrlLabel->offsetMax = {0.f, 130.f};
+    ctrlLabel->text = "Controls";
+    ctrlLabel->font = &hudFont_;
+    ctrlLabel->fontSize = 32.f;
+    ctrlLabel->color = lightBlue;
+    ctrlLabel->align = TextAlign::Center;
+    bg->addChild(ctrlLabel);
+
+    // Control lines
+    const char* ctrlLines[] = {
+        "W / Up      Move forward",
+        "S / Down    Move backward",
+        "A / Left    Move left",
+        "D / Right   Move right",
+        "R           Reset level",
+    };
+    float y = 140.f;
+    for (const char* line : ctrlLines)
+    {
+        auto* t = titleCanvas_->createNode<UiText>("ctrl");
+        t->anchor = {{0.f, 0.5f}, {1.f, 0.5f}};
+        t->offsetMin = {0.f, y};
+        t->offsetMax = {0.f, y + 32.f};
+        t->text = line;
+        t->font = &hudFont_;
+        t->fontSize = 26.f;
+        t->color = light;
+        t->align = TextAlign::Center;
+        bg->addChild(t);
+        y += 38.f;
+    }
+}
+
+void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
+{
+    using namespace engine::ui;
+
+    endLevelCanvas_ = std::make_unique<UiCanvas>(canvasW_, canvasH_);
+    endLevelCanvasBuilt_ = true;
+    endLevelCanvasHasNext_ = hasNextLevel;
+
+    auto* root = endLevelCanvas_->root();
+
+    auto* bg = endLevelCanvas_->createNode<UiPanel>("endBg");
+    bg->anchor = {{0.f, 0.f}, {1.f, 1.f}};
+    bg->color = {0.f, 0.f, 0.f, 0.0f};  // transparent overlay
+    root->addChild(bg);
+
+    const engine::math::Vec4 yellow{1.0f, 0.95f, 0.3f, 1.0f};
+
+    auto* msg = endLevelCanvas_->createNode<UiText>("endMsg");
+    msg->anchor = {{0.f, 0.f}, {0.f, 0.f}};
+    msg->offsetMin = {80.f, 60.f};
+    msg->offsetMax = {1400.f, 160.f};
+    msg->text = hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!";
+    msg->font = &hudFont_;
+    msg->fontSize = 72.f;
+    msg->color = yellow;
+    msg->align = TextAlign::Left;
+    bg->addChild(msg);
+
+    if (hasNextLevel)
+    {
+        auto* nextBtn = endLevelCanvas_->createNode<UiButton>("nextBtn");
+        nextBtn->anchor = {{0.f, 0.f}, {0.f, 0.f}};
+        nextBtn->offsetMin = {80.f, 200.f};
+        nextBtn->offsetMax = {440.f, 270.f};
+        nextBtn->label = "Next Level";
+        nextBtn->font = &hudFont_;
+        nextBtn->fontSize = 36.f;
+        nextBtn->normalColor = {0.20f, 0.20f, 0.32f, 1.0f};
+        nextBtn->hoverColor = {0.32f, 0.32f, 0.45f, 1.0f};
+        nextBtn->pressedColor = {0.12f, 0.12f, 0.20f, 1.0f};
+        nextBtn->textColor = {1.f, 1.f, 1.f, 1.f};
+        nextBtn->cornerRadius = 8.f;
+        nextBtn->onClick = [this](engine::ui::UiNode&)
         {
-            ImGui::SetWindowFontScale(10.0f);
-            if (levelComplete)
-            {
-                ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.3f, 1.0f),
-                                   hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!");
-            }
-            else
-            {
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f),
-                                   "Coins Collected: %d/%d",
-                                   collected, coinCount_);
-            }
-        }
-        ImGui::End();
+            if (engine_ && registry_)
+                loadLevel(*engine_, *registry_, currentLevel_ + 1);
+        };
+        bg->addChild(nextBtn);
+    }
+}
+
+void SampleGame::dispatchMouseEvents(engine::core::Engine& engine, engine::ui::UiCanvas& canvas)
+{
+    const auto& input = engine.inputState();
+    const float scaleX = engine.contentScaleX();
+    const float scaleY = engine.contentScaleY();
+    const float mx = static_cast<float>(input.mouseX()) * scaleX;
+    const float my = static_cast<float>(input.mouseY()) * scaleY;
+
+    if (mx != prevMouseX_ || my != prevMouseY_)
+    {
+        engine::ui::UiEvent e;
+        e.type = engine::ui::UiEventType::MouseMove;
+        e.position = {mx, my};
+        e.button = 0;
+        canvas.dispatchEvent(e);
     }
 
-    // Next-level button is still ImGui for now (migrated in step 3).
-    if (levelComplete && hasNextLevel)
+    if (input.isMouseButtonPressed(engine::input::MouseButton::Left))
     {
-        ImGui::SetNextWindowPos(ImVec2(80.0f, 160.0f), ImGuiCond_Always);
-        ImGuiWindowFlags btnFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                    ImGuiWindowFlags_NoBackground |
-                                    ImGuiWindowFlags_NoSavedSettings |
-                                    ImGuiWindowFlags_AlwaysAutoResize;
-        if (ImGui::Begin("##hud_btn", nullptr, btnFlags))
-        {
-            ImGui::SetWindowFontScale(5.0f);
-            if (ImGui::Button("Next Level"))
-            {
-                if (engine_ && registry_)
-                    loadLevel(*engine_, *registry_, currentLevel_ + 1);
-            }
-        }
-        ImGui::End();
+        engine::ui::UiEvent e;
+        e.type = engine::ui::UiEventType::MouseDown;
+        e.position = {mx, my};
+        e.button = 0;
+        canvas.dispatchEvent(e);
     }
+
+    if (input.isMouseButtonReleased(engine::input::MouseButton::Left))
+    {
+        engine::ui::UiEvent e;
+        e.type = engine::ui::UiEventType::MouseUp;
+        e.position = {mx, my};
+        e.button = 0;
+        canvas.dispatchEvent(e);
+    }
+
+    prevMouseX_ = mx;
+    prevMouseY_ = my;
 }
 
 void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)

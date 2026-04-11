@@ -19,8 +19,10 @@
 #include "engine/rendering/systems/DrawCallBuildSystem.h"
 #include "engine/threading/ThreadPool.h"
 #include "engine/ui/MsdfFont.h"
+#include "engine/ui/UiCanvas.h"
 #include "engine/ui/UiDrawList.h"
 #include "engine/ui/UiRenderer.h"
+#include <memory>
 
 class SampleGame : public engine::game::IGame
 {
@@ -114,4 +116,18 @@ private:
     engine::ui::UiRenderer uiRenderer_;
     engine::ui::UiDrawList hudDrawList_;
     bool hudFontLoaded_ = false;
+
+    // Retained-mode UI canvases (rebuilt lazily on state change).
+    std::unique_ptr<engine::ui::UiCanvas> titleCanvas_;
+    std::unique_ptr<engine::ui::UiCanvas> endLevelCanvas_;
+    uint16_t canvasW_ = 0;
+    uint16_t canvasH_ = 0;
+    bool endLevelCanvasBuilt_ = false;
+    bool endLevelCanvasHasNext_ = false;
+    float prevMouseX_ = 0.f;
+    float prevMouseY_ = 0.f;
+
+    void buildTitleCanvas();
+    void buildEndLevelCanvas(bool hasNextLevel);
+    void dispatchMouseEvents(engine::core::Engine& engine, engine::ui::UiCanvas& canvas);
 };

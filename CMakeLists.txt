@@ -16,15 +16,28 @@ FetchContent_MakeAvailable(sama)
 # Platform-specific sources and linking
 # ---------------------------------------------------------------------------
 if(SAMA_ANDROID)
-    # Android: shared library loaded by NativeActivity
+    # Android: shared library loaded by NativeActivity.
+    # The sama_3d umbrella target is desktop-only (guarded by NOT SAMA_ANDROID
+    # in Sama's CMakeLists), so we link the individual engine libraries.
     add_library(sample_game SHARED main_android.cpp SampleGame.cpp)
     target_link_libraries(sample_game PRIVATE
-        sama_3d
+        engine_rendering
+        engine_scene
+        engine_ecs
+        engine_memory
+        engine_physics
+        engine_audio
+        engine_animation
+        engine_assets
+        engine_input
+        engine_io
         engine_ui
         engine_android
         native_app_glue
         android
         log
+        EGL
+        GLESv2
     )
     # Ensure ANativeActivity_onCreate is not stripped.
     set_target_properties(sample_game PROPERTIES

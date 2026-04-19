@@ -1,5 +1,6 @@
 #include "SampleGame.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <vector>
@@ -662,6 +663,27 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     if (input.isKeyHeld(Key::Down) || input.isKeyHeld(Key::S))  axisF -= 1.0f;
     if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D)) axisR += 1.0f;
     if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))  axisR -= 1.0f;
+
+    // Gyroscope/accelerometer tilt input (primarily for Android, but works
+    // on any platform that provides gyro data — returns zeros on desktop).
+    // The gravity vector tells us which way the phone is tilted:
+    //   Phone flat:     gravity ~= (0, -1, 0)  → no tilt
+    //   Tilt forward:   gravity.Z becomes negative → ball moves forward
+    //   Tilt right:     gravity.X becomes positive → ball moves right
+    // We use gravityX/Z directly as axis values, clamped to [-1, 1].
+    const auto& gyro = input.gyro();
+    if (gyro.available)
+    {
+        constexpr float kTiltSensitivity = 2.5f;
+        float tiltR = std::clamp(gyro.gravityX * kTiltSensitivity, -1.0f, 1.0f);
+        float tiltF = std::clamp(-gyro.gravityZ * kTiltSensitivity, -1.0f, 1.0f);
+        axisF += tiltF;
+        axisR += tiltR;
+        // Re-clamp combined axis to [-1, 1] so keyboard+tilt don't double up.
+        axisF = std::clamp(axisF, -1.0f, 1.0f);
+        axisR = std::clamp(axisR, -1.0f, 1.0f);
+    }
+
     force.x = (axisF * fwd.x + axisR * right.x) * kForceMag;
     force.z = (axisF * fwd.y + axisR * right.y) * kForceMag;
 

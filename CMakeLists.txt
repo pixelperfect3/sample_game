@@ -10,32 +10,31 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/pixelperfect3/sama.git                                                                                                                                                                                       
     GIT_TAG        main  # pin to a specific commit for production
 )                                                                 
-FetchContent_MakeAvailable(sama)                                                                                                                                                                                                                   
-                                        
+FetchContent_MakeAvailable(sama)
+
+# On Android, bgfx's entry_android.cpp needs the native_app_glue header.
+# The native_app_glue target's PUBLIC include dir doesn't reach bgfx since
+# bgfx doesn't link against it — add the include dir explicitly.
+if(SAMA_ANDROID AND CMAKE_ANDROID_NDK)
+    target_include_directories(bgfx PUBLIC
+        "${CMAKE_ANDROID_NDK}/sources/android/native_app_glue")
+endif()
+
 # ---------------------------------------------------------------------------
 # Platform-specific sources and linking
 # ---------------------------------------------------------------------------
 if(SAMA_ANDROID)
     # Android: shared library loaded by NativeActivity.
-    # The sama_3d umbrella target is desktop-only (guarded by NOT SAMA_ANDROID
-    # in Sama's CMakeLists), so we link the individual engine libraries.
+    # engine_android transitively brings in engine_game, engine_core,
+    # engine_rendering, engine_scene, engine_ecs, etc.
     add_library(sample_game SHARED main_android.cpp SampleGame.cpp)
     target_link_libraries(sample_game PRIVATE
-        engine_rendering
-        engine_scene
-        engine_ecs
-        engine_memory
+        engine_android
         engine_physics
         engine_audio
         engine_animation
         engine_assets
-        engine_input
-        engine_io
         engine_ui
-        engine_android
-        native_app_glue
-        android
-        log
         EGL
         GLESv2
     )

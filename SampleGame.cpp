@@ -1387,6 +1387,54 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
         highlight->interactable = false;
         bg->addChild(highlight);
     }
+    else
+    {
+        // Final level won — "Back to Home Screen" button centered.
+        const float btnHalfW = 280.f * s;
+        const float btnHalfH = 68.f * s;
+        const float btnRadius = 24.f * s;
+
+        auto* shadow = endLevelCanvas_->createNode<UiPanel>("homeBtnShadow");
+        shadow->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
+        shadow->offsetMin = {-btnHalfW - 4.f * s, -btnHalfH + 8.f * s};
+        shadow->offsetMax = { btnHalfW + 4.f * s,  btnHalfH + 16.f * s};
+        shadow->color = {0.0f, 0.0f, 0.05f, 0.45f};
+        shadow->cornerRadius = btnRadius + 4.f * s;
+        shadow->interactable = false;
+        bg->addChild(shadow);
+
+        auto* homeBtn = endLevelCanvas_->createNode<UiButton>("homeBtn");
+        homeBtn->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
+        homeBtn->offsetMin = {-btnHalfW, -btnHalfH};
+        homeBtn->offsetMax = { btnHalfW,  btnHalfH};
+        homeBtn->label = "Back to Home Screen";
+        homeBtn->font = hudFont_;
+        homeBtn->fontSize = 44.f * s;
+        homeBtn->normalColor  = {0.28f, 0.36f, 0.72f, 1.0f};
+        homeBtn->hoverColor   = {0.40f, 0.52f, 0.95f, 1.0f};
+        homeBtn->pressedColor = {0.18f, 0.24f, 0.56f, 1.0f};
+        homeBtn->textColor    = {1.0f, 1.0f, 1.0f, 1.0f};
+        homeBtn->cornerRadius = btnRadius;
+        homeBtn->onClick = [this](engine::ui::UiNode&)
+        {
+            // Return to title screen.
+            if (registry_)
+                clearLevel(*registry_);
+            showTitleScreen_ = true;
+            endLevelCanvasBuilt_ = false;
+            endLevelCanvas_.reset();
+        };
+        bg->addChild(homeBtn);
+
+        auto* highlight = endLevelCanvas_->createNode<UiPanel>("homeBtnHighlight");
+        highlight->anchor = {{0.5f, 0.5f}, {0.5f, 0.5f}};
+        highlight->offsetMin = {-btnHalfW + 6.f * s, -btnHalfH + 6.f * s};
+        highlight->offsetMax = { btnHalfW - 6.f * s, -btnHalfH + 24.f * s};
+        highlight->color = {1.0f, 1.0f, 1.0f, 0.12f};
+        highlight->cornerRadius = btnRadius - 4.f * s;
+        highlight->interactable = false;
+        bg->addChild(highlight);
+    }
 }
 
 void SampleGame::dispatchMouseEvents(engine::core::Engine& engine, engine::ui::UiCanvas& canvas)

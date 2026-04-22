@@ -1072,6 +1072,37 @@ void SampleGame::onRender(Engine& engine)
         std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
         hudDrawList_.drawText(hudPos, buf, white, hudFont_, hudSize);
 
+        // Reset button — top-right corner
+        const float btnW = 120.f * dpi;
+        const float btnH = 50.f * dpi;
+        const float btnX = static_cast<float>(W) - btnW - 30.f * dpi;
+        const float btnY = 30.f * dpi;
+        const engine::math::Vec4 btnColor{0.25f, 0.25f, 0.38f, 0.85f};
+        hudDrawList_.drawRect({btnX, btnY}, {btnW, btnH}, btnColor, 10.f * dpi);
+        const float lblSize = 28.f * dpi;
+        const float lblX = btnX + (btnW - lblSize * 3.2f) * 0.5f;  // ~3.2 chars wide
+        const float lblY = btnY + (btnH - lblSize) * 0.5f;
+        hudDrawList_.drawText({lblX, lblY}, "Reset", white, hudFont_, lblSize);
+
+        // Hit-test: if mouse/touch pressed inside the button rect, reset.
+        {
+            const auto& input = engine.inputState();
+#ifdef __ANDROID__
+            const float mx = static_cast<float>(input.mouseX());
+            const float my = static_cast<float>(input.mouseY());
+#else
+            const float mx = static_cast<float>(input.mouseX()) * engine.contentScaleX();
+            const float my = static_cast<float>(input.mouseY()) * engine.contentScaleY();
+#endif
+            if (input.isMouseButtonPressed(engine::input::MouseButton::Left) &&
+                mx >= btnX && mx <= btnX + btnW &&
+                my >= btnY && my <= btnY + btnH)
+            {
+                if (registry_)
+                    resetLevel(*registry_);
+            }
+        }
+
         const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
         bgfx::setViewName(hudView, "HUD");
         bgfx::setViewRect(hudView, 0, 0, W, H);

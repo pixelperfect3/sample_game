@@ -1066,7 +1066,7 @@ void SampleGame::onRender(Engine& engine)
 
         const engine::math::Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
         const engine::math::Vec2 hudPos{40.0f * dpi, 32.0f * dpi};
-        const float hudSize = 36.0f * dpi;
+        const float hudSize = 48.0f * dpi;
 
         char buf[64];
         std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
@@ -1141,11 +1141,11 @@ void SampleGame::buildTitleCanvas()
     // "Sample Game" title — centered, high on screen.
     auto* title = titleCanvas_->createNode<UiText>("title");
     title->anchor = {{0.f, 0.f}, {1.f, 0.f}};
-    title->offsetMin = {0.f, 60.f * s};
+    title->offsetMin = {0.f, 40.f * s};
     title->offsetMax = {0.f, 160.f * s};
     title->text = "Sample Game";
     title->font = hudFont_;
-    title->fontSize = 72.f * s;
+    title->fontSize = 96.f * s;
     title->color = yellow;
     title->align = TextAlign::Center;
     bg->addChild(title);
@@ -1153,11 +1153,11 @@ void SampleGame::buildTitleCanvas()
     // Objective lines
     auto* obj1 = titleCanvas_->createNode<UiText>("obj1");
     obj1->anchor = {{0.f, 0.f}, {1.f, 0.f}};
-    obj1->offsetMin = {0.f, 190.f * s};
-    obj1->offsetMax = {0.f, 222.f * s};
+    obj1->offsetMin = {0.f, 180.f * s};
+    obj1->offsetMax = {0.f, 220.f * s};
     obj1->text = "Roll the ball to collect all the coins.";
     obj1->font = hudFont_;
-    obj1->fontSize = 22.f * s;
+    obj1->fontSize = 30.f * s;
     obj1->color = light;
     obj1->align = TextAlign::Center;
     bg->addChild(obj1);
@@ -1165,20 +1165,18 @@ void SampleGame::buildTitleCanvas()
     auto* obj2 = titleCanvas_->createNode<UiText>("obj2");
     obj2->anchor = {{0.f, 0.f}, {1.f, 0.f}};
     obj2->offsetMin = {0.f, 224.f * s};
-    obj2->offsetMax = {0.f, 256.f * s};
+    obj2->offsetMax = {0.f, 264.f * s};
     obj2->text = "Don't fall off the edge!";
     obj2->font = hudFont_;
-    obj2->fontSize = 22.f * s;
+    obj2->fontSize = 30.f * s;
     obj2->color = light;
     obj2->align = TextAlign::Center;
     bg->addChild(obj2);
 
-    // Start Game button group — a drop shadow + button + top highlight,
-    // all sharing the same centre and footprint. Siblings added to `bg` in
-    // draw order (shadow first, button next, highlight stripe on top).
-    const float btnHalfW = 180.f * s;
-    const float btnHalfH = 52.f * s;
-    const float btnRadius = 22.f * s;
+    // Start Game button group
+    const float btnHalfW = 240.f * s;
+    const float btnHalfH = 68.f * s;
+    const float btnRadius = 24.f * s;
 
     // (1) Drop shadow — slightly larger, offset down-right, semi-transparent.
     auto* shadow = titleCanvas_->createNode<UiPanel>("startBtnShadow");
@@ -1197,7 +1195,7 @@ void SampleGame::buildTitleCanvas()
     startBtn->offsetMax = { btnHalfW,  btnHalfH};
     startBtn->label = "Start Game";
     startBtn->font = hudFont_;
-    startBtn->fontSize = 40.f * s;
+    startBtn->fontSize = 52.f * s;
     // Rich blue-purple gradient fake: main fill is the mid tone,
     // highlight stripe on top brightens it, shadow below deepens it.
     startBtn->normalColor  = {0.28f, 0.36f, 0.72f, 1.0f};
@@ -1230,47 +1228,47 @@ void SampleGame::buildTitleCanvas()
     // "Controls" label
     auto* ctrlLabel = titleCanvas_->createNode<UiText>("ctrlLabel");
     ctrlLabel->anchor = {{0.f, 0.5f}, {1.f, 0.5f}};
-    ctrlLabel->offsetMin = {0.f, 80.f * s};
-    ctrlLabel->offsetMax = {0.f, 110.f * s};
+    ctrlLabel->offsetMin = {0.f, 90.f * s};
+    ctrlLabel->offsetMax = {0.f, 130.f * s};
     ctrlLabel->text = "Controls";
     ctrlLabel->font = hudFont_;
-    ctrlLabel->fontSize = 22.f * s;
+    ctrlLabel->fontSize = 30.f * s;
     ctrlLabel->color = lightBlue;
     ctrlLabel->align = TextAlign::Center;
     bg->addChild(ctrlLabel);
 
-    // Control lines — platform-specific
+    // Control lines — platform-specific, em dash for clean alignment
 #ifdef __ANDROID__
     const char* ctrlLines[] = {
-        "Tilt forward    Move forward",
-        "Tilt backward   Move backward",
-        "Tilt left       Move left",
-        "Tilt right      Move right",
-        "Tap button      Start / Next level",
+        "Tilt forward  --  Move forward",
+        "Tilt back  --  Move backward",
+        "Tilt left  --  Move left",
+        "Tilt right  --  Move right",
+        "Tap button  --  Start / Next level",
     };
 #else
     const char* ctrlLines[] = {
-        "W / Up      Move forward",
-        "S / Down    Move backward",
-        "A / Left    Move left",
-        "D / Right   Move right",
-        "R           Reset level",
+        "W / Up  --  Move forward",
+        "S / Down  --  Move backward",
+        "A / Left  --  Move left",
+        "D / Right  --  Move right",
+        "R  --  Reset level",
     };
 #endif
-    float y = 120.f * s;
+    float y = 140.f * s;
     for (const char* line : ctrlLines)
     {
         auto* t = titleCanvas_->createNode<UiText>("ctrl");
         t->anchor = {{0.f, 0.5f}, {1.f, 0.5f}};
         t->offsetMin = {0.f, y};
-        t->offsetMax = {0.f, y + 24.f * s};
+        t->offsetMax = {0.f, y + 30.f * s};
         t->text = line;
         t->font = hudFont_;
-        t->fontSize = 18.f * s;
+        t->fontSize = 24.f * s;
         t->color = light;
         t->align = TextAlign::Center;
         bg->addChild(t);
-        y += 30.f * s;
+        y += 36.f * s;
     }
 }
 
@@ -1296,22 +1294,21 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
     auto* msg = endLevelCanvas_->createNode<UiText>("endMsg");
     msg->anchor = {{0.f, 0.f}, {0.f, 0.f}};
     msg->offsetMin = {40.f * s, 32.f * s};
-    msg->offsetMax = {800.f * s, 92.f * s};
+    msg->offsetMax = {900.f * s, 110.f * s};
     msg->text = hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!";
     msg->font = hudFont_;
-    msg->fontSize = 44.f * s;
+    msg->fontSize = 60.f * s;
     msg->color = yellow;
     msg->align = TextAlign::Left;
     bg->addChild(msg);
 
     if (hasNextLevel)
     {
-        // Same composed button recipe as the title screen's Start Game.
         const float btnLeft = 40.f * s;
-        const float btnTop = 110.f * s;
-        const float btnRight = 280.f * s;
-        const float btnBottom = 190.f * s;
-        const float btnRadius = 18.f * s;
+        const float btnTop = 130.f * s;
+        const float btnRight = 340.f * s;
+        const float btnBottom = 220.f * s;
+        const float btnRadius = 22.f * s;
 
         auto* shadow = endLevelCanvas_->createNode<UiPanel>("nextBtnShadow");
         shadow->anchor = {{0.f, 0.f}, {0.f, 0.f}};
@@ -1328,7 +1325,7 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
         nextBtn->offsetMax = {btnRight, btnBottom};
         nextBtn->label = "Next Level";
         nextBtn->font = hudFont_;
-        nextBtn->fontSize = 32.f * s;
+        nextBtn->fontSize = 40.f * s;
         nextBtn->normalColor  = {0.28f, 0.36f, 0.72f, 1.0f};
         nextBtn->hoverColor   = {0.40f, 0.52f, 0.95f, 1.0f};
         nextBtn->pressedColor = {0.18f, 0.24f, 0.56f, 1.0f};

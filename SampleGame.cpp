@@ -759,22 +759,30 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     if (input.isKeyHeld(Key::Right) || input.isKeyHeld(Key::D)) axisR += 1.0f;
     if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))  axisR -= 1.0f;
 
-    // Gyroscope/accelerometer tilt input (primarily for Android, but works
-    // on any platform that provides gyro data — returns zeros on desktop).
-    // The gravity vector tells us which way the phone is tilted:
-    //   Phone flat:     gravity ~= (0, -1, 0)  → no tilt
-    //   Tilt forward:   gravity.Z becomes negative → ball moves forward
-    //   Tilt right:     gravity.X becomes positive → ball moves right
-    // We use gravityX/Z directly as axis values, clamped to [-1, 1].
+    // Gyroscope/accelerometer tilt input (primarily for Android).
+    // Gravity vector is in m/s² (~9.8 when vertical). Normalize by 9.8
+    // so full axis = 90° tilt, then apply a sensitivity curve. A 20-30°
+    // tilt should produce ~full force.
     const auto& gyro = input.gyro();
     if (gyro.available)
     {
-        constexpr float kTiltSensitivity = 2.5f;
-        float tiltR = std::clamp(gyro.gravityX * kTiltSensitivity, -1.0f, 1.0f);
-        float tiltF = std::clamp(-gyro.gravityZ * kTiltSensitivity, -1.0f, 1.0f);
-        axisF += tiltF;
-        axisR += tiltR;
-        // Re-clamp combined axis to [-1, 1] so keyboard+tilt don't double up.
+        constexpr float kG = 9.8f;
+        constexpr float kDeadzone = 0.05f;  // ignore tiny wobble
+        constexpr float kSensitivity = 3.0f; // ~20° for full force
+
+        float normR = gyro.gravityX / kG;   // [-1, 1] at 90° tilt
+        float normF = -gyro.gravityZ / kG;
+
+        // Apply deadzone then scale.
+        auto applyAxis = [&](float v) -> float {
+            float a = std::abs(v);
+            if (a < kDeadzone) return 0.0f;
+            float sign = v > 0.f ? 1.f : -1.f;
+            return std::clamp(sign * (a - kDeadzone) * kSensitivity, -1.0f, 1.0f);
+        };
+
+        axisF += applyAxis(normF);
+        axisR += applyAxis(normR);
         axisF = std::clamp(axisF, -1.0f, 1.0f);
         axisR = std::clamp(axisR, -1.0f, 1.0f);
     }

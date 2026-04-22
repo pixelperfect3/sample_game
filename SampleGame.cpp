@@ -332,7 +332,6 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     MeshData cubeData = makeCubeMeshData();
     Mesh cubeMesh = buildMesh(cubeData);
     cubeMeshId_ = engine.resources().addMesh(std::move(cubeMesh));
-    const uint32_t cubeMeshId = cubeMeshId_;
 
     // ---- Materials --------------------------------------------------------
     Material greyMat;
@@ -340,14 +339,12 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     greyMat.roughness = 0.7f;
     greyMat.metallic = 0.1f;
     greyMatId_ = engine.resources().addMaterial(greyMat);
-    const uint32_t greyMatId = greyMatId_;
 
     Material groundMat;
     groundMat.albedo = {0.22f, 0.22f, 0.25f, 1.0f};
     groundMat.roughness = 0.9f;
     groundMat.metallic = 0.0f;
     groundMatId_ = engine.resources().addMaterial(groundMat);
-    const uint32_t groundMatId = groundMatId_;
 
     Material coinMat;
     coinMat.albedo = {1.0f, 0.85f, 0.2f, 1.0f};
@@ -380,18 +377,18 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
 
         engine::scene::SceneSerializer ser;
         ser.registerEngineComponents();
-        registerCustomComponents(ser, cubeMeshId);
+        registerCustomComponents(ser, cubeMeshId_);
         ser.saveScene(tempReg, engine.resources(), "levels/plank.json");
         std::fprintf(stderr, "SampleGame: saved levels/plank.json\n");
     }
     {
         // Figure-8 level
         Registry tempReg;
-        spawnFigureEightFloor(tempReg, cubeMeshId, greyMatId);
+        spawnFigureEightFloor(tempReg, cubeMeshId_, greyMatId_);
 
         engine::scene::SceneSerializer ser;
         ser.registerEngineComponents();
-        registerCustomComponents(ser, cubeMeshId);
+        registerCustomComponents(ser, cubeMeshId_);
         ser.saveScene(tempReg, engine.resources(), "levels/figure8.json");
         std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
     }

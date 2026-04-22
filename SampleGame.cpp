@@ -1056,16 +1056,20 @@ void SampleGame::onRender(Engine& engine)
     const bool hasNextLevel = (currentLevel_ < kLevelCount - 1);
 
     // Per-frame coin counter via UiDrawList (MSDF).
-    // Font sizes and pixel offsets are in physical framebuffer pixels, so
-    // multiply by the DPI scale to keep the visual size consistent across
-    // retina (contentScale≈2) and non-retina (contentScale≈1) displays.
     const float dpi = static_cast<float>(H) / 1080.f;
+
+    // Top inset to clear the Android status bar / display cutout.
+#ifdef __ANDROID__
+    const float topInset = 50.f * dpi;
+#else
+    const float topInset = 0.f;
+#endif
     if (hudFontLoaded_ && !levelComplete)
     {
         hudDrawList_.clear();
 
         const engine::math::Vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
-        const engine::math::Vec2 hudPos{40.0f * dpi, 32.0f * dpi};
+        const engine::math::Vec2 hudPos{40.0f * dpi, 32.0f * dpi + topInset};
         const float hudSize = 48.0f * dpi;
 
         char buf[64];
@@ -1076,7 +1080,7 @@ void SampleGame::onRender(Engine& engine)
         const float btnW = 120.f * dpi;
         const float btnH = 50.f * dpi;
         const float btnX = static_cast<float>(W) - btnW - 30.f * dpi;
-        const float btnY = 30.f * dpi;
+        const float btnY = 30.f * dpi + topInset;
         const engine::math::Vec4 btnColor{0.25f, 0.25f, 0.38f, 0.85f};
         hudDrawList_.drawRect({btnX, btnY}, {btnW, btnH}, btnColor, 10.f * dpi);
         const float lblSize = 28.f * dpi;
@@ -1324,8 +1328,13 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
 
     auto* msg = endLevelCanvas_->createNode<UiText>("endMsg");
     msg->anchor = {{0.f, 0.f}, {0.f, 0.f}};
-    msg->offsetMin = {40.f * s, 32.f * s};
-    msg->offsetMax = {900.f * s, 110.f * s};
+#ifdef __ANDROID__
+    const float endTopInset = 50.f * s;
+#else
+    const float endTopInset = 0.f;
+#endif
+    msg->offsetMin = {40.f * s, 32.f * s + endTopInset};
+    msg->offsetMax = {900.f * s, 110.f * s + endTopInset};
     msg->text = hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!";
     msg->font = hudFont_;
     msg->fontSize = 60.f * s;
@@ -1336,9 +1345,9 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
     if (hasNextLevel)
     {
         const float btnLeft = 40.f * s;
-        const float btnTop = 130.f * s;
+        const float btnTop = 130.f * s + endTopInset;
         const float btnRight = 340.f * s;
-        const float btnBottom = 220.f * s;
+        const float btnBottom = 220.f * s + endTopInset;
         const float btnRadius = 22.f * s;
 
         auto* shadow = endLevelCanvas_->createNode<UiPanel>("nextBtnShadow");

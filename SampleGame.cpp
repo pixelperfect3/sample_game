@@ -960,6 +960,15 @@ void SampleGame::onRender(Engine& engine)
         showTitleScreen_ = true;
         endLevelCanvasBuilt_ = false;
         endLevelCanvas_.reset();
+        coinsRemaining_ = 1;  // prevent stale "level complete" state
+
+        // Clear all views so no stale 3D scene or HUD bleeds through.
+        RenderPass(kViewOpaque).rect(0, 0, W, H).clearColorAndDepth(0x1A1A2EFF);
+        RenderPass(kViewTransparent).rect(0, 0, W, H).clearColorAndDepth(0x00000000);
+        bgfx::setViewRect(engine::rendering::kViewGameUi, 0, 0, W, H);
+        bgfx::setViewClear(engine::rendering::kViewGameUi,
+                           BGFX_CLEAR_COLOR, 0x00000000, 1.0f, 0);
+        bgfx::touch(engine::rendering::kViewGameUi);
     }
 
     // Ensure canvases exist and are sized to the current framebuffer.

@@ -1302,6 +1302,50 @@ void SampleGame::dispatchMouseEvents(engine::core::Engine& engine, engine::ui::U
     const auto& input = engine.inputState();
     const float scaleX = engine.contentScaleX();
     const float scaleY = engine.contentScaleY();
+
+    // --- Touch input (Android / touchscreen) ---
+    // Map the first touch to mouse-style UiEvents so buttons work.
+    const auto& touches = input.touches();
+    if (!touches.empty())
+    {
+        const auto& t = touches[0];
+        const float tx = t.x * scaleX;
+        const float ty = t.y * scaleY;
+
+        if (t.phase == engine::input::TouchPoint::Phase::Began)
+        {
+            engine::ui::UiEvent e;
+            e.type = engine::ui::UiEventType::MouseMove;
+            e.position = {tx, ty};
+            e.button = 0;
+            canvas.dispatchEvent(e);
+
+            e.type = engine::ui::UiEventType::MouseDown;
+            canvas.dispatchEvent(e);
+        }
+        else if (t.phase == engine::input::TouchPoint::Phase::Moved)
+        {
+            engine::ui::UiEvent e;
+            e.type = engine::ui::UiEventType::MouseMove;
+            e.position = {tx, ty};
+            e.button = 0;
+            canvas.dispatchEvent(e);
+        }
+        else if (t.phase == engine::input::TouchPoint::Phase::Ended)
+        {
+            engine::ui::UiEvent e;
+            e.type = engine::ui::UiEventType::MouseUp;
+            e.position = {tx, ty};
+            e.button = 0;
+            canvas.dispatchEvent(e);
+        }
+
+        prevMouseX_ = tx;
+        prevMouseY_ = ty;
+        return;
+    }
+
+    // --- Mouse input (desktop) ---
     const float mx = static_cast<float>(input.mouseX()) * scaleX;
     const float my = static_cast<float>(input.mouseY()) * scaleY;
 

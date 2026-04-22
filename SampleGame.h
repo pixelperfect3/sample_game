@@ -108,6 +108,11 @@ private:
     // camera orientation and the movement-key axis.
     glm::vec2 smoothedFwd_{0.0f, -1.0f};
 
+    // Gyro calibration: gravity reading at level start = neutral tilt.
+    float gyroBaseX_ = 0.0f;
+    float gyroBaseY_ = 0.0f;
+    bool gyroCalibrated_ = false;
+
     // Engine/Registry pointers used in onRender
     engine::core::Engine* engine_ = nullptr;
     engine::ecs::Registry* registry_ = nullptr;

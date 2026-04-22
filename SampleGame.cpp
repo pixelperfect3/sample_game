@@ -600,6 +600,7 @@ void SampleGame::loadLevel(Engine& engine, Registry& registry, int level)
 {
     clearLevel(registry);
     currentLevel_ = level;
+    gyroCalibrated_ = false;  // recalibrate tilt base on next frame
 
     if (level == 0)
     {
@@ -771,21 +772,24 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     const auto& gyro = input.gyro();
     if (gyro.available)
     {
-        constexpr float kDeadzone = 0.06f;
-        constexpr float kSensitivity = 2.5f;  // ~25° for full force
+        // Calibrate: snapshot the current tilt as "neutral" on first read
+        // or after a level reset, so whatever angle the user holds the
+        // phone at level start = zero input.
+        if (!gyroCalibrated_)
+        {
+            gyroBaseX_ = gyro.gravityX;
+            gyroBaseY_ = gyro.gravityY;
+            gyroCalibrated_ = true;
+        }
 
-        auto applyAxis = [](float v, float dz, float sens) -> float {
-            float a = std::abs(v);
-            if (a < dz) return 0.0f;
-            float sign = v > 0.f ? 1.f : -1.f;
-            return std::clamp(sign * (a - dz) * sens, -1.0f, 1.0f);
-        };
+        constexpr float kSensitivity = 2.5f;
 
-        // Landscape (90° CCW): device X = screen vertical, device Y = screen horizontal.
-        // Forward tilt rotates around device Y → shifts gravity along device X.
-        // Right tilt rotates around device X → shifts gravity along device Y.
-        axisF += applyAxis(-gyro.gravityX, kDeadzone, kSensitivity);
-        axisR += applyAxis(gyro.gravityY, kDeadzone, kSensitivity);
+        float deltaX = gyro.gravityX - gyroBaseX_;
+        float deltaY = gyro.gravityY - gyroBaseY_;
+
+        // Landscape (90° CCW): forward = -deltaX, right = +deltaY.
+        axisF += std::clamp(-deltaX * kSensitivity, -1.0f, 1.0f);
+        axisR += std::clamp(deltaY * kSensitivity, -1.0f, 1.0f);
         axisF = std::clamp(axisF, -1.0f, 1.0f);
         axisR = std::clamp(axisR, -1.0f, 1.0f);
     }
@@ -918,6 +922,7 @@ void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
 
 void SampleGame::resetLevel(Registry& registry)
 {
+    gyroCalibrated_ = false;  // recalibrate tilt base on next frame
     if (auto* rb = registry.get<RigidBodyComponent>(ballEntity_); rb && rb->bodyID != ~0u)
     {
         physics_.setBodyPosition(rb->bodyID,

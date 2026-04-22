@@ -112,6 +112,7 @@ private:
     float gyroBaseX_ = 0.0f;
     float gyroBaseY_ = 0.0f;
     bool gyroCalibrated_ = false;
+    bool returnToTitlePending_ = false;
 
     // Engine/Registry pointers used in onRender
     engine::core::Engine* engine_ = nullptr;

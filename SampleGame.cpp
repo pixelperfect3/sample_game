@@ -950,6 +950,18 @@ void SampleGame::onRender(Engine& engine)
     const float fbW = static_cast<float>(W);
     const float fbH = static_cast<float>(H);
 
+    // Handle deferred return-to-title (set by "Back to Home Screen" button).
+    // Must happen before any canvas access to avoid use-after-free.
+    if (returnToTitlePending_)
+    {
+        returnToTitlePending_ = false;
+        if (registry_)
+            clearLevel(*registry_);
+        showTitleScreen_ = true;
+        endLevelCanvasBuilt_ = false;
+        endLevelCanvas_.reset();
+    }
+
     // Ensure canvases exist and are sized to the current framebuffer.
     if (!titleCanvas_ || canvasW_ != W || canvasH_ != H)
     {
@@ -1417,12 +1429,9 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
         homeBtn->cornerRadius = btnRadius;
         homeBtn->onClick = [this](engine::ui::UiNode&)
         {
-            // Return to title screen.
-            if (registry_)
-                clearLevel(*registry_);
-            showTitleScreen_ = true;
-            endLevelCanvasBuilt_ = false;
-            endLevelCanvas_.reset();
+            // Defer to next frame — can't destroy the canvas while
+            // we're inside its event dispatch.
+            returnToTitlePending_ = true;
         };
         bg->addChild(homeBtn);
 

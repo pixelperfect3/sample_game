@@ -110,6 +110,14 @@ constexpr float kBallRadius = 0.55f;
 constexpr float kTau = 6.2831853f;
 constexpr float kAndroidTopInset = 50.f;  // pixels (scaled by dpi)
 
+static void setupUiView(bgfx::ViewId viewId, uint16_t w, uint16_t h, const char* name)
+{
+    bgfx::setViewName(viewId, name);
+    bgfx::setViewRect(viewId, 0, 0, w, h);
+    bgfx::setViewClear(viewId, BGFX_CLEAR_NONE);
+    bgfx::touch(viewId);
+}
+
 std::vector<uint8_t> readFileBytes(const char* path)
 {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
@@ -988,10 +996,7 @@ void SampleGame::onRender(Engine& engine)
             titleCanvas_->update();
 
             const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
-            bgfx::setViewName(uiView, "TitleUI");
-            bgfx::setViewRect(uiView, 0, 0, W, H);
-            bgfx::setViewClear(uiView, BGFX_CLEAR_NONE);
-            bgfx::touch(uiView);
+            setupUiView(uiView, W, H, "TitleUI");
             uiRenderer_.render(titleCanvas_->drawList(), uiView, W, H);
         }
         return;  // skip 3D rendering
@@ -1114,10 +1119,7 @@ void SampleGame::onRender(Engine& engine)
         }
 
         const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
-        bgfx::setViewName(hudView, "HUD");
-        bgfx::setViewRect(hudView, 0, 0, W, H);
-        bgfx::setViewClear(hudView, BGFX_CLEAR_NONE);
-        bgfx::touch(hudView);
+        setupUiView(hudView, W, H, "HUD");
         uiRenderer_.render(hudDrawList_, hudView, W, H);
     }
 
@@ -1136,10 +1138,7 @@ void SampleGame::onRender(Engine& engine)
             endLevelCanvas_->update();
 
             const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
-            bgfx::setViewName(uiView, "HUD");
-            bgfx::setViewRect(uiView, 0, 0, W, H);
-            bgfx::setViewClear(uiView, BGFX_CLEAR_NONE);
-            bgfx::touch(uiView);
+            setupUiView(uiView, W, H, "HUD");
             uiRenderer_.render(endLevelCanvas_->drawList(), uiView, W, H);
         }
     }

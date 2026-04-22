@@ -1239,7 +1239,16 @@ void SampleGame::buildTitleCanvas()
     ctrlLabel->align = TextAlign::Center;
     bg->addChild(ctrlLabel);
 
-    // Control lines
+    // Control lines — platform-specific
+#ifdef __ANDROID__
+    const char* ctrlLines[] = {
+        "Tilt forward    Move forward",
+        "Tilt backward   Move backward",
+        "Tilt left       Move left",
+        "Tilt right      Move right",
+        "Tap button      Start / Next level",
+    };
+#else
     const char* ctrlLines[] = {
         "W / Up      Move forward",
         "S / Down    Move backward",
@@ -1247,6 +1256,7 @@ void SampleGame::buildTitleCanvas()
         "D / Right   Move right",
         "R           Reset level",
     };
+#endif
     float y = 120.f * s;
     for (const char* line : ctrlLines)
     {

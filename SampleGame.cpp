@@ -370,27 +370,44 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     }
 
     // ---- Generate scene files for both levels ------------------------------
+    // Only generate level files if they don't already exist.
     {
-        // Plank level
-        Registry tempReg;
-        spawnPlankLevel(tempReg);
+        FILE* check = fopen("levels/plank.json", "r");
+        if (!check)
+        {
+            // Plank level
+            Registry tempReg;
+            spawnPlankLevel(tempReg);
 
-        engine::scene::SceneSerializer ser;
-        ser.registerEngineComponents();
-        registerCustomComponents(ser, cubeMeshId_);
-        ser.saveScene(tempReg, engine.resources(), "levels/plank.json");
-        std::fprintf(stderr, "SampleGame: saved levels/plank.json\n");
+            engine::scene::SceneSerializer ser;
+            ser.registerEngineComponents();
+            registerCustomComponents(ser, cubeMeshId_);
+            ser.saveScene(tempReg, engine.resources(), "levels/plank.json");
+            std::fprintf(stderr, "SampleGame: saved levels/plank.json\n");
+        }
+        else
+        {
+            fclose(check);
+        }
     }
     {
-        // Figure-8 level
-        Registry tempReg;
-        spawnFigureEightFloor(tempReg, cubeMeshId_, greyMatId_);
+        FILE* check = fopen("levels/figure8.json", "r");
+        if (!check)
+        {
+            // Figure-8 level
+            Registry tempReg;
+            spawnFigureEightFloor(tempReg, cubeMeshId_, greyMatId_);
 
-        engine::scene::SceneSerializer ser;
-        ser.registerEngineComponents();
-        registerCustomComponents(ser, cubeMeshId_);
-        ser.saveScene(tempReg, engine.resources(), "levels/figure8.json");
-        std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
+            engine::scene::SceneSerializer ser;
+            ser.registerEngineComponents();
+            registerCustomComponents(ser, cubeMeshId_);
+            ser.saveScene(tempReg, engine.resources(), "levels/figure8.json");
+            std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
+        }
+        else
+        {
+            fclose(check);
+        }
     }
 
     // Don't load a level yet — title screen shows first.

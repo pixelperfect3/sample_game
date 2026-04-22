@@ -226,16 +226,25 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     // ---- IBL --------------------------------------------------------------
     ibl_.generateDefault();
 
-    // ---- UI (MSDF font + renderer) ---------------------------------------
-    if (hudFont_.loadFromFile("assets/fonts/JetBrainsMono-msdf.json",
-                              "assets/fonts/JetBrainsMono-msdf.png"))
+    // ---- UI (font + renderer) -----------------------------------------------
+#ifdef __ANDROID__
+    // BitmapFont is embedded — no external assets, uses sprite shader.
+    if (bitmapFont_.createDebugFont())
     {
+        hudFont_ = &bitmapFont_;
         hudFontLoaded_ = true;
     }
-    else
+#else
+    // MSDF atlas gives crisp text at any size on desktop.
+    if (msdfFont_.loadFromFile("assets/fonts/JetBrainsMono-msdf.json",
+                               "assets/fonts/JetBrainsMono-msdf.png"))
     {
-        std::fprintf(stderr, "SampleGame: failed to load MSDF font\n");
+        hudFont_ = &msdfFont_;
+        hudFontLoaded_ = true;
     }
+#endif
+    if (!hudFontLoaded_)
+        std::fprintf(stderr, "SampleGame: failed to load font\n");
     uiRenderer_.init();
 
     // ---- Shared cube mesh -------------------------------------------------
@@ -956,7 +965,7 @@ void SampleGame::onRender(Engine& engine)
 
         char buf[64];
         std::snprintf(buf, sizeof(buf), "Coins Collected: %d/%d", collected, coinCount_);
-        hudDrawList_.drawText(hudPos, buf, white, &hudFont_, hudSize);
+        hudDrawList_.drawText(hudPos, buf, white, hudFont_, hudSize);
 
         const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
         bgfx::setViewName(hudView, "HUD");
@@ -1030,7 +1039,7 @@ void SampleGame::buildTitleCanvas()
     title->offsetMin = {0.f, 60.f * s};
     title->offsetMax = {0.f, 160.f * s};
     title->text = "Sample Game";
-    title->font = &hudFont_;
+    title->font = hudFont_;
     title->fontSize = 72.f * s;
     title->color = yellow;
     title->align = TextAlign::Center;
@@ -1042,7 +1051,7 @@ void SampleGame::buildTitleCanvas()
     obj1->offsetMin = {0.f, 190.f * s};
     obj1->offsetMax = {0.f, 222.f * s};
     obj1->text = "Roll the ball to collect all the coins.";
-    obj1->font = &hudFont_;
+    obj1->font = hudFont_;
     obj1->fontSize = 22.f * s;
     obj1->color = light;
     obj1->align = TextAlign::Center;
@@ -1053,7 +1062,7 @@ void SampleGame::buildTitleCanvas()
     obj2->offsetMin = {0.f, 224.f * s};
     obj2->offsetMax = {0.f, 256.f * s};
     obj2->text = "Don't fall off the edge!";
-    obj2->font = &hudFont_;
+    obj2->font = hudFont_;
     obj2->fontSize = 22.f * s;
     obj2->color = light;
     obj2->align = TextAlign::Center;
@@ -1082,7 +1091,7 @@ void SampleGame::buildTitleCanvas()
     startBtn->offsetMin = {-btnHalfW, -btnHalfH};
     startBtn->offsetMax = { btnHalfW,  btnHalfH};
     startBtn->label = "Start Game";
-    startBtn->font = &hudFont_;
+    startBtn->font = hudFont_;
     startBtn->fontSize = 40.f * s;
     // Rich blue-purple gradient fake: main fill is the mid tone,
     // highlight stripe on top brightens it, shadow below deepens it.
@@ -1119,7 +1128,7 @@ void SampleGame::buildTitleCanvas()
     ctrlLabel->offsetMin = {0.f, 80.f * s};
     ctrlLabel->offsetMax = {0.f, 110.f * s};
     ctrlLabel->text = "Controls";
-    ctrlLabel->font = &hudFont_;
+    ctrlLabel->font = hudFont_;
     ctrlLabel->fontSize = 22.f * s;
     ctrlLabel->color = lightBlue;
     ctrlLabel->align = TextAlign::Center;
@@ -1141,7 +1150,7 @@ void SampleGame::buildTitleCanvas()
         t->offsetMin = {0.f, y};
         t->offsetMax = {0.f, y + 24.f * s};
         t->text = line;
-        t->font = &hudFont_;
+        t->font = hudFont_;
         t->fontSize = 18.f * s;
         t->color = light;
         t->align = TextAlign::Center;
@@ -1174,7 +1183,7 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
     msg->offsetMin = {40.f * s, 32.f * s};
     msg->offsetMax = {800.f * s, 92.f * s};
     msg->text = hasNextLevel ? "LEVEL COMPLETE!" : "YOU WIN!";
-    msg->font = &hudFont_;
+    msg->font = hudFont_;
     msg->fontSize = 44.f * s;
     msg->color = yellow;
     msg->align = TextAlign::Left;
@@ -1203,7 +1212,7 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
         nextBtn->offsetMin = {btnLeft, btnTop};
         nextBtn->offsetMax = {btnRight, btnBottom};
         nextBtn->label = "Next Level";
-        nextBtn->font = &hudFont_;
+        nextBtn->font = hudFont_;
         nextBtn->fontSize = 32.f * s;
         nextBtn->normalColor  = {0.28f, 0.36f, 0.72f, 1.0f};
         nextBtn->hoverColor   = {0.40f, 0.52f, 0.95f, 1.0f};
@@ -1272,7 +1281,9 @@ void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)
     uiRenderer_.shutdown();
     if (hudFontLoaded_)
     {
-        hudFont_.shutdown();
+        msdfFont_.shutdown();
+        bitmapFont_.shutdown();
+        hudFont_ = nullptr;
         hudFontLoaded_ = false;
     }
     ibl_.shutdown();

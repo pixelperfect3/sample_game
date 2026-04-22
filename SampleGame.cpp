@@ -36,35 +36,6 @@
 
 namespace
 {
-// Extract an APK asset to the app's internal storage so fopen-based
-// loaders (MsdfFont) can read it. Returns the filesystem path.
-std::string extractAssetToInternal(const char* assetPath, const char* internalDir)
-{
-    AAssetManager* am = engine::platform::getAssetManager();
-    if (!am) return {};
-
-    AAsset* asset = AAssetManager_open(am, assetPath, AASSET_MODE_BUFFER);
-    if (!asset) return {};
-
-    size_t size = AAsset_getLength(asset);
-    const void* buf = AAsset_getBuffer(asset);
-
-    std::string outPath = std::string(internalDir) + "/" + assetPath;
-
-    // Ensure parent directories exist.
-    std::string dir = outPath.substr(0, outPath.rfind('/'));
-    std::string mkdirCmd = "mkdir -p " + dir;
-    system(mkdirCmd.c_str());
-
-    FILE* f = fopen(outPath.c_str(), "wb");
-    if (f)
-    {
-        fwrite(buf, 1, size, f);
-        fclose(f);
-    }
-    AAsset_close(asset);
-    return outPath;
-}
 // Extract all game assets from APK to internal storage and chdir there.
 // AAssetManager scopes into the APK's assets/ folder, so paths passed
 // to it must NOT have the "assets/" prefix.  But the game code loads
@@ -1509,7 +1480,6 @@ void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)
     if (hudFontLoaded_)
     {
         msdfFont_.shutdown();
-        bitmapFont_.shutdown();
         hudFont_ = nullptr;
         hudFontLoaded_ = false;
     }

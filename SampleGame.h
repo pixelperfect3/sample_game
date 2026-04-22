@@ -18,7 +18,6 @@
 #include "engine/rendering/IblResources.h"
 #include "engine/rendering/systems/DrawCallBuildSystem.h"
 #include "engine/threading/ThreadPool.h"
-#include "engine/ui/BitmapFont.h"
 #include "engine/ui/MsdfFont.h"
 #include "engine/ui/UiCanvas.h"
 #include "engine/ui/UiDrawList.h"
@@ -120,8 +119,7 @@ private:
 
     // UI (font + renderer + per-frame draw list for the HUD)
     engine::ui::MsdfFont msdfFont_;
-    engine::ui::BitmapFont bitmapFont_;
-    engine::ui::IFont* hudFont_ = nullptr;  // points to msdf or bitmap
+    engine::ui::IFont* hudFont_ = nullptr;  // points to msdf font
     engine::ui::UiRenderer uiRenderer_;
     engine::ui::UiDrawList hudDrawList_;
     bool hudFontLoaded_ = false;

@@ -1301,13 +1301,19 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
 void SampleGame::dispatchMouseEvents(engine::core::Engine& engine, engine::ui::UiCanvas& canvas)
 {
     const auto& input = engine.inputState();
+
+    // On desktop, mouseX/Y are logical pixels — multiply by contentScale
+    // to match the physical-pixel canvas. On Android, touch coordinates
+    // are already in physical pixels (no scaling needed).
+#ifdef __ANDROID__
+    const float mx = static_cast<float>(input.mouseX());
+    const float my = static_cast<float>(input.mouseY());
+#else
     const float scaleX = engine.contentScaleX();
     const float scaleY = engine.contentScaleY();
-
-    // Mouse input — works on both desktop (real mouse) and Android (touch
-    // synthesized to mouse by AndroidInputBackend).
     const float mx = static_cast<float>(input.mouseX()) * scaleX;
     const float my = static_cast<float>(input.mouseY()) * scaleY;
+#endif
 
     if (mx != prevMouseX_ || my != prevMouseY_)
     {

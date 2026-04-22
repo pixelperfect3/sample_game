@@ -760,29 +760,30 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     if (input.isKeyHeld(Key::Left) || input.isKeyHeld(Key::A))  axisR -= 1.0f;
 
     // Gyroscope/accelerometer tilt input (primarily for Android).
-    // Gravity vector is in m/s² (~9.8 when vertical). Normalize by 9.8
-    // so full axis = 90° tilt, then apply a sensitivity curve. A 20-30°
-    // tilt should produce ~full force.
+    // Sama's AndroidGyro already normalizes gravity by 9.8, so
+    // gravityX/Y/Z are in [-1, 1] (1.0 = 90° tilt).
+    //
+    // Accelerometer reports in DEVICE (portrait) coordinates:
+    //   Device X = portrait right, Device Y = portrait up
+    // In landscape mode, the screen is rotated 90° CCW:
+    //   Screen forward (away from user) = device -Y
+    //   Screen right                    = device +X
     const auto& gyro = input.gyro();
     if (gyro.available)
     {
-        constexpr float kG = 9.8f;
-        constexpr float kDeadzone = 0.05f;  // ignore tiny wobble
-        constexpr float kSensitivity = 3.0f; // ~20° for full force
+        constexpr float kDeadzone = 0.06f;
+        constexpr float kSensitivity = 2.5f;  // ~25° for full force
 
-        float normR = gyro.gravityX / kG;   // [-1, 1] at 90° tilt
-        float normF = -gyro.gravityZ / kG;
-
-        // Apply deadzone then scale.
-        auto applyAxis = [&](float v) -> float {
+        auto applyAxis = [](float v, float dz, float sens) -> float {
             float a = std::abs(v);
-            if (a < kDeadzone) return 0.0f;
+            if (a < dz) return 0.0f;
             float sign = v > 0.f ? 1.f : -1.f;
-            return std::clamp(sign * (a - kDeadzone) * kSensitivity, -1.0f, 1.0f);
+            return std::clamp(sign * (a - dz) * sens, -1.0f, 1.0f);
         };
 
-        axisF += applyAxis(normF);
-        axisR += applyAxis(normR);
+        // Landscape: forward = -gravityY, right = gravityX
+        axisF += applyAxis(-gyro.gravityY, kDeadzone, kSensitivity);
+        axisR += applyAxis(gyro.gravityX, kDeadzone, kSensitivity);
         axisF = std::clamp(axisF, -1.0f, 1.0f);
         axisR = std::clamp(axisR, -1.0f, 1.0f);
     }

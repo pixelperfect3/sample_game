@@ -45,7 +45,13 @@ if(SAMA_ANDROID)
     )
 else()
     # Desktop (macOS): executable with Objective-C++ entry point
+    # imgui_tables.cpp is needed by the latest ImGui but missing from
+    # Sama's engine_debug; add it here as a workaround.
     add_executable(sample_game main.mm SampleGame.cpp)
+    # imgui_tables.cpp is needed by latest ImGui but missing from Sama's
+    # engine_debug; compile it into our target as a workaround.
+    target_sources(sample_game PRIVATE
+        "${FETCHCONTENT_BASE_DIR}/bgfx_cmake-src/bgfx/3rdparty/dear-imgui/imgui_tables.cpp")
     target_link_libraries(sample_game PRIVATE sama_3d engine_ui)
 
     if(APPLE)

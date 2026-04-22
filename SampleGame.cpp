@@ -781,9 +781,11 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
             return std::clamp(sign * (a - dz) * sens, -1.0f, 1.0f);
         };
 
-        // Landscape: forward = -gravityY, right = gravityX
-        axisF += applyAxis(-gyro.gravityY, kDeadzone, kSensitivity);
-        axisR += applyAxis(gyro.gravityX, kDeadzone, kSensitivity);
+        // Landscape (90° CCW): device X = screen vertical, device Y = screen horizontal.
+        // Forward tilt rotates around device Y → shifts gravity along device X.
+        // Right tilt rotates around device X → shifts gravity along device Y.
+        axisF += applyAxis(-gyro.gravityX, kDeadzone, kSensitivity);
+        axisR += applyAxis(-gyro.gravityY, kDeadzone, kSensitivity);
         axisF = std::clamp(axisF, -1.0f, 1.0f);
         axisR = std::clamp(axisR, -1.0f, 1.0f);
     }

@@ -29,6 +29,7 @@
 #include "engine/ui/widgets/UiText.h"
 
 #ifdef __ANDROID__
+#include <unistd.h>
 #include <android/asset_manager.h>
 #include <android/log.h>
 #include "engine/platform/android/AndroidGlobals.h"
@@ -64,6 +65,28 @@ std::string extractAssetToInternal(const char* assetPath, const char* internalDi
     AAsset_close(asset);
     return outPath;
 }
+// Extract all game assets from APK to internal storage and chdir there.
+// After this, fopen("assets/beep.wav") etc. work normally.
+void extractAllAssets(const char* internalDir)
+{
+    const char* files[] = {
+        "assets/beep.wav",
+        "assets/models/sphere.glb",
+        "assets/models/coin.glb",
+        "assets/fonts/JetBrainsMono-msdf.json",
+        "assets/fonts/JetBrainsMono-msdf.png",
+        "levels/plank.json",
+        "levels/figure8.json",
+    };
+    for (const char* f : files)
+        extractAssetToInternal(f, internalDir);
+
+    // chdir so all relative paths resolve against internal storage.
+    chdir(internalDir);
+    __android_log_print(ANDROID_LOG_INFO, "SampleGame",
+        "Extracted %zu assets to %s", sizeof(files)/sizeof(files[0]), internalDir);
+}
+
 }  // namespace
 #endif
 
@@ -248,6 +271,12 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     engine_ = &engine;
     registry_ = &registry;
 
+#ifdef __ANDROID__
+    // APK assets aren't accessible via fopen. Extract everything to
+    // internal storage and chdir there so all relative paths work.
+    extractAllAssets("/data/data/com.pixelperfect3.samplegame/cache");
+#endif
+
     // ---- Kick off glTF loads (async; applied once Ready) ------------------
     sphereHandle_ = assets_.load<GltfAsset>("assets/models/sphere.glb");
     coinHandle_ = assets_.load<GltfAsset>("assets/models/coin.glb");
@@ -266,33 +295,8 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     ibl_.generateDefault();
 
     // ---- UI (font + renderer) -----------------------------------------------
-    // MsdfFont::loadFromFile uses fopen, which can't read APK assets on
-    // Android. Extract the font files to internal storage first.
-#ifdef __ANDROID__
-    {
-        const char* intDir = "/data/data/com.pixelperfect3.samplegame/cache";
-        std::string jsonPath = extractAssetToInternal(
-            "fonts/JetBrainsMono-msdf.json", intDir);
-        std::string pngPath = extractAssetToInternal(
-            "fonts/JetBrainsMono-msdf.png", intDir);
-        if (!jsonPath.empty() && !pngPath.empty() &&
-            msdfFont_.loadFromFile(jsonPath.c_str(), pngPath.c_str()))
-        {
-            hudFont_ = &msdfFont_;
-            hudFontLoaded_ = true;
-        }
-        else
-        {
-            std::fprintf(stderr, "SampleGame: MSDF font extract/load failed, "
-                                 "falling back to BitmapFont\n");
-            if (bitmapFont_.createDebugFont())
-            {
-                hudFont_ = &bitmapFont_;
-                hudFontLoaded_ = true;
-            }
-        }
-    }
-#else
+    // On Android, extractAllAssets + chdir means these paths now resolve
+    // against internal storage. On desktop, they resolve against cwd.
     if (msdfFont_.loadFromFile("assets/fonts/JetBrainsMono-msdf.json",
                                "assets/fonts/JetBrainsMono-msdf.png"))
     {
@@ -303,7 +307,6 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     {
         std::fprintf(stderr, "SampleGame: failed to load MSDF font\n");
     }
-#endif
     uiRenderer_.init();
 
     // ---- Shared cube mesh -------------------------------------------------

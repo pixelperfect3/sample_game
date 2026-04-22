@@ -787,8 +787,11 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
         const float gx = gyro.gravityX;
         const float gy = gyro.gravityY;
         const float gz = gyro.gravityZ;
-        const float tiltX = std::atan2(gx, -gz);  // device roll
-        const float tiltY = std::atan2(gy, -gz);  // device pitch
+        // Inclination of each axis relative to the horizontal plane.
+        // Using the perpendicular-plane magnitude as denominator makes
+        // these stable at ANY base orientation (upright, angled, or flat).
+        const float tiltX = std::atan2(gx, std::sqrt(gy * gy + gz * gz));
+        const float tiltY = std::atan2(gy, std::sqrt(gx * gx + gz * gz));
 
         if (!gyroCalibrated_)
         {

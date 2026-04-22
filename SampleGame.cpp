@@ -105,6 +105,11 @@ using namespace engine::rendering;
 
 namespace
 {
+constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
+constexpr float kBallRadius = 0.55f;
+constexpr float kTau = 6.2831853f;
+constexpr float kAndroidTopInset = 50.f;  // pixels (scaled by dpi)
+
 std::vector<uint8_t> readFileBytes(const char* path)
 {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
@@ -449,7 +454,6 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint
     constexpr float kRInner = 2.5f;
     constexpr float kCx = 3.5f;
     constexpr float kThick = 1.0f;
-    constexpr float kTau = 6.2831853f;
     const float dR = (kROuter - kRInner) / static_cast<float>(kRadial);
     const float dTheta = kTau / static_cast<float>(kAngular);
     const float halfThick = kThick * 0.5f;
@@ -533,7 +537,7 @@ void SampleGame::spawnPlankLevel(Registry& registry)
 void SampleGame::spawnBall(Registry& registry)
 {
     ballEntity_ = registry.createEntity();
-    const float r = 0.55f;
+    const float r = kBallRadius;
     TransformComponent tc{};
     tc.position = {ballStartPos_.x, ballStartPos_.y, ballStartPos_.z};
     tc.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -599,7 +603,7 @@ void SampleGame::loadLevel(Engine& engine, Registry& registry, int level)
     else if (level == 1)
     {
         // Figure-8 level
-        ballStartPos_ = {-7.0f, 0.55f, 0.0f};
+        ballStartPos_ = {-7.0f, kBallRadius, 0.0f};
         coinCount_ = 3;
 
         engine::scene::SceneSerializer ser;
@@ -676,7 +680,7 @@ void SampleGame::spawnCoin(Registry& registry, int index)
         constexpr float kROuter = 4.0f;
         constexpr float kRInner = 2.5f;
         constexpr float kCx = 3.5f;
-        std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+        std::uniform_real_distribution<float> angleDist(0.0f, kTau);
         std::uniform_real_distribution<float> radiusDist(
             kRInner + 0.4f, kROuter - 0.4f);
         std::uniform_int_distribution<int> ringDist(0, 1);
@@ -684,7 +688,7 @@ void SampleGame::spawnCoin(Registry& registry, int index)
         const float radius = radiusDist(rng_);
         const int ring = (index == 0) ? 1 : ringDist(rng_);
         const float cx = (ring == 0) ? -kCx : kCx;
-        coinPositions_[index] = {cx + radius * std::cos(theta), 0.55f,
+        coinPositions_[index] = {cx + radius * std::cos(theta), kBallRadius,
                                  radius * std::sin(theta)};
     }
 
@@ -944,7 +948,7 @@ void SampleGame::onRender(Engine& engine)
         coinsRemaining_ = 1;  // prevent stale "level complete" state
 
         // Clear all views so no stale 3D scene or HUD bleeds through.
-        RenderPass(kViewOpaque).rect(0, 0, W, H).clearColorAndDepth(0x1A1A2EFF);
+        RenderPass(kViewOpaque).rect(0, 0, W, H).clearColorAndDepth(kBackgroundColor);
         RenderPass(kViewTransparent).rect(0, 0, W, H).clearColorAndDepth(0x00000000);
         bgfx::setViewRect(engine::rendering::kViewGameUi, 0, 0, W, H);
         bgfx::setViewClear(engine::rendering::kViewGameUi,
@@ -976,7 +980,7 @@ void SampleGame::onRender(Engine& engine)
         // Just clear the screen.
         RenderPass(kViewOpaque)
             .rect(0, 0, W, H)
-            .clearColorAndDepth(0x1A1A2EFF);
+            .clearColorAndDepth(kBackgroundColor);
 
         if (hudFontLoaded_ && titleCanvas_)
         {
@@ -1025,7 +1029,7 @@ void SampleGame::onRender(Engine& engine)
 
     RenderPass(kViewOpaque)
         .rect(0, 0, W, H)
-        .clearColorAndDepth(0x1A1A2EFF)
+        .clearColorAndDepth(kBackgroundColor)
         .transform(viewMat, projMat);
 
     // Transparent pass shares the view/proj; no clear (blends onto opaque).
@@ -1062,7 +1066,7 @@ void SampleGame::onRender(Engine& engine)
 
     // Top inset to clear the Android status bar / display cutout.
 #ifdef __ANDROID__
-    const float topInset = 50.f * dpi;
+    const float topInset = kAndroidTopInset * dpi;
 #else
     const float topInset = 0.f;
 #endif
@@ -1331,7 +1335,7 @@ void SampleGame::buildEndLevelCanvas(bool hasNextLevel)
     auto* msg = endLevelCanvas_->createNode<UiText>("endMsg");
     msg->anchor = {{0.f, 0.f}, {0.f, 0.f}};
 #ifdef __ANDROID__
-    const float endTopInset = 50.f * s;
+    const float endTopInset = kAndroidTopInset * s;
 #else
     const float endTopInset = 0.f;
 #endif

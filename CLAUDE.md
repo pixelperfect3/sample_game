@@ -30,6 +30,10 @@ This project uses the Sama engine. When writing engine code:
 - Custom systems go in `systems/` directory                                                                                                                                                                                                        
 - C++20, Allman braces, 4-space indent, 100 char line limit (same as Sama)                                                                                                                                                                         
                                                                                                                                                                                                                                                    
+## Git Workflow
+
+- Always push to GitHub whenever changes are made
+
 ## Commands                                 
                                                                                                                                                                                                                                                    
 - Build: `cmake --build build --target sample_game -j$(sysctl -n hw.ncpu)`

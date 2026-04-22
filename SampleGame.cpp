@@ -772,28 +772,40 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     // Sama's AndroidGyro already normalizes gravity by 9.8, so
     // gravityX/Y/Z are in [-1, 1] (1.0 = 90° tilt).
     //
-    // Accelerometer reports in DEVICE (portrait) coordinates:
-    //   Device X = portrait right, Device Y = portrait up
-    // In landscape mode, the screen is rotated 90° CCW:
-    //   Screen forward (away from user) = device -Y
-    //   Screen right                    = device +X
+    // We convert gravity to tilt angles (atan2) so that the input is
+    // linear regardless of the phone's base orientation — works the
+    // same whether held upright, at 45°, or lying flat in bed.
+    //
+    // Device coords (portrait): X = right, Y = up, Z = out of screen.
+    // Landscape 90° CCW: screen-forward = device -Y, screen-right = device +X.
     const auto& gyro = input.gyro();
     if (gyro.available)
     {
-        // Calibrate: snapshot the current tilt as "neutral" on first read
-        // or after a level reset, so whatever angle the user holds the
-        // phone at level start = zero input.
+        // Tilt angles from the gravity vector.  atan2 gives a linear
+        // mapping from any base orientation — unlike raw axis deltas
+        // which become tiny when the phone is nearly flat.
+        const float gx = gyro.gravityX;
+        const float gy = gyro.gravityY;
+        const float gz = gyro.gravityZ;
+        const float tiltX = std::atan2(gx, -gz);  // device roll
+        const float tiltY = std::atan2(gy, -gz);  // device pitch
+
         if (!gyroCalibrated_)
         {
-            gyroBaseX_ = gyro.gravityX;
-            gyroBaseY_ = gyro.gravityY;
+            gyroBaseX_ = tiltX;
+            gyroBaseY_ = tiltY;
             gyroCalibrated_ = true;
         }
 
-        constexpr float kSensitivity = 2.5f;
+        constexpr float kSensitivity = 1.6f;  // radians → axis; ~35° tilt = full input
+        constexpr float kDeadzone = 0.03f;     // radians (~1.7°)
 
-        float deltaX = gyro.gravityX - gyroBaseX_;
-        float deltaY = gyro.gravityY - gyroBaseY_;
+        float deltaX = tiltX - gyroBaseX_;
+        float deltaY = tiltY - gyroBaseY_;
+
+        // Small deadzone so minor hand tremor doesn't move the ball.
+        if (std::abs(deltaX) < kDeadzone) deltaX = 0.0f;
+        if (std::abs(deltaY) < kDeadzone) deltaY = 0.0f;
 
         // Landscape (90° CCW): forward = -deltaX, right = +deltaY.
         axisF += std::clamp(-deltaX * kSensitivity, -1.0f, 1.0f);
@@ -1052,6 +1064,9 @@ void SampleGame::onRender(Engine& engine)
         .transform(viewMat, projMat);
 
     // Transparent pass shares the view/proj; no clear (blends onto opaque).
+    // Explicitly reset clear flags — they persist across frames in bgfx, and
+    // the returnToTitlePending_ path sets clearColorAndDepth on this view.
+    bgfx::setViewClear(kViewTransparent, BGFX_CLEAR_NONE);
     RenderPass(kViewTransparent)
         .rect(0, 0, W, H)
         .transform(viewMat, projMat);

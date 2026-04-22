@@ -66,25 +66,49 @@ std::string extractAssetToInternal(const char* assetPath, const char* internalDi
     return outPath;
 }
 // Extract all game assets from APK to internal storage and chdir there.
-// After this, fopen("assets/beep.wav") etc. work normally.
+// AAssetManager scopes into the APK's assets/ folder, so paths passed
+// to it must NOT have the "assets/" prefix.  But the game code loads
+// via fopen("assets/..."), so the output path DOES need the prefix.
+struct AssetEntry { const char* amPath; const char* fsPath; };
+
 void extractAllAssets(const char* internalDir)
 {
-    const char* files[] = {
-        "assets/beep.wav",
-        "assets/models/sphere.glb",
-        "assets/models/coin.glb",
-        "assets/fonts/JetBrainsMono-msdf.json",
-        "assets/fonts/JetBrainsMono-msdf.png",
-        "levels/plank.json",
-        "levels/figure8.json",
+    const AssetEntry files[] = {
+        {"beep.wav",                          "assets/beep.wav"},
+        {"models/sphere.glb",                 "assets/models/sphere.glb"},
+        {"models/coin.glb",                   "assets/models/coin.glb"},
+        {"fonts/JetBrainsMono-msdf.json",     "assets/fonts/JetBrainsMono-msdf.json"},
+        {"fonts/JetBrainsMono-msdf.png",      "assets/fonts/JetBrainsMono-msdf.png"},
+        {"levels/plank.json",                 "levels/plank.json"},
+        {"levels/figure8.json",               "levels/figure8.json"},
     };
-    for (const char* f : files)
-        extractAssetToInternal(f, internalDir);
+    int ok = 0;
+    for (const auto& f : files)
+    {
+        // Open from APK using amPath, write to filesystem using fsPath.
+        AAssetManager* am = engine::platform::getAssetManager();
+        if (!am) continue;
+        AAsset* asset = AAssetManager_open(am, f.amPath, AASSET_MODE_BUFFER);
+        if (!asset)
+        {
+            __android_log_print(ANDROID_LOG_WARN, "SampleGame",
+                "extractAllAssets: not found in APK: %s", f.amPath);
+            continue;
+        }
+        size_t size = AAsset_getLength(asset);
+        const void* buf = AAsset_getBuffer(asset);
+        std::string outPath = std::string(internalDir) + "/" + f.fsPath;
+        std::string dir = outPath.substr(0, outPath.rfind('/'));
+        std::string mkdirCmd = "mkdir -p " + dir;
+        system(mkdirCmd.c_str());
+        FILE* fp = fopen(outPath.c_str(), "wb");
+        if (fp) { fwrite(buf, 1, size, fp); fclose(fp); ++ok; }
+        AAsset_close(asset);
+    }
 
-    // chdir so all relative paths resolve against internal storage.
     chdir(internalDir);
     __android_log_print(ANDROID_LOG_INFO, "SampleGame",
-        "Extracted %zu assets to %s", sizeof(files)/sizeof(files[0]), internalDir);
+        "Extracted %d/%zu assets to %s", ok, sizeof(files)/sizeof(files[0]), internalDir);
 }
 
 }  // namespace

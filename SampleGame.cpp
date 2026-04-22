@@ -910,7 +910,9 @@ void SampleGame::onRender(Engine& engine)
     {
         canvasW_ = W;
         canvasH_ = H;
-        canvasDpi_ = engine.contentScaleX() > 0.f ? engine.contentScaleX() : 1.0f;
+        // Scale UI relative to screen height so layouts fit on both desktop
+        // (2160 physical px) and phone (1080 physical px landscape).
+        canvasDpi_ = static_cast<float>(H) / 1080.f;
         if (!titleCanvas_)
             titleCanvas_ = std::make_unique<engine::ui::UiCanvas>(W, H);
         else
@@ -1012,7 +1014,7 @@ void SampleGame::onRender(Engine& engine)
     // Font sizes and pixel offsets are in physical framebuffer pixels, so
     // multiply by the DPI scale to keep the visual size consistent across
     // retina (contentScale≈2) and non-retina (contentScale≈1) displays.
-    const float dpi = engine.contentScaleX() > 0.f ? engine.contentScaleX() : 1.f;
+    const float dpi = static_cast<float>(H) / 1080.f;
     if (hudFontLoaded_ && !levelComplete)
     {
         hudDrawList_.clear();

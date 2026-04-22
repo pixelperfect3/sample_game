@@ -1,0 +1,24 @@
+{
+    "window": {
+        "width": 1920,
+        "height": 1080,
+        "title": "Sample Game"
+    },
+    "tier": "high",
+    "tiers": {
+        "high": {
+            "maxTextureSize": 2048,
+            "textureCompression": "astc_4x4",
+            "shadowMapSize": 2048,
+            "shadowCascades": 3,
+            "maxBones": 128,
+            "enableIBL": true,
+            "enableSSAO": false,
+            "enableBloom": false,
+            "enableFXAA": true,
+            "depthPrepass": true,
+            "renderScale": 1.0,
+            "targetFPS": 60
+        }
+    }
+}

@@ -81,6 +81,7 @@ void extractAllAssets(const char* internalDir)
         {"fonts/JetBrainsMono-msdf.png",      "assets/fonts/JetBrainsMono-msdf.png"},
         {"levels/plank.json",                 "levels/plank.json"},
         {"levels/figure8.json",               "levels/figure8.json"},
+        {"project.json",                      "project.json"},
     };
     int ok = 0;
     for (const auto& f : files)

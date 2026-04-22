@@ -29,6 +29,7 @@
 #include "engine/ui/widgets/UiText.h"
 
 #ifdef __ANDROID__
+#include <sys/stat.h>
 #include <unistd.h>
 #include <android/asset_manager.h>
 #include <android/log.h>
@@ -71,8 +72,17 @@ void extractAllAssets(const char* internalDir)
         const void* buf = AAsset_getBuffer(asset);
         std::string outPath = std::string(internalDir) + "/" + f.fsPath;
         std::string dir = outPath.substr(0, outPath.rfind('/'));
-        std::string mkdirCmd = "mkdir -p " + dir;
-        system(mkdirCmd.c_str());
+        // Recursive mkdir
+        for (size_t pos = 1; pos < dir.size(); ++pos)
+        {
+            if (dir[pos] == '/')
+            {
+                dir[pos] = '\0';
+                mkdir(dir.c_str(), 0755);
+                dir[pos] = '/';
+            }
+        }
+        mkdir(dir.c_str(), 0755);
         FILE* fp = fopen(outPath.c_str(), "wb");
         if (fp) { fwrite(buf, 1, size, fp); fclose(fp); ++ok; }
         AAsset_close(asset);

@@ -28,6 +28,44 @@
 #include "engine/ui/widgets/UiPanel.h"
 #include "engine/ui/widgets/UiText.h"
 
+#ifdef __ANDROID__
+#include <android/asset_manager.h>
+#include "engine/platform/android/AndroidGlobals.h"
+
+namespace
+{
+// Extract an APK asset to the app's internal storage so fopen-based
+// loaders (MsdfFont) can read it. Returns the filesystem path.
+std::string extractAssetToInternal(const char* assetPath, const char* internalDir)
+{
+    AAssetManager* am = engine::platform::getAssetManager();
+    if (!am) return {};
+
+    AAsset* asset = AAssetManager_open(am, assetPath, AASSET_MODE_BUFFER);
+    if (!asset) return {};
+
+    size_t size = AAsset_getLength(asset);
+    const void* buf = AAsset_getBuffer(asset);
+
+    std::string outPath = std::string(internalDir) + "/" + assetPath;
+
+    // Ensure parent directories exist.
+    std::string dir = outPath.substr(0, outPath.rfind('/'));
+    std::string mkdirCmd = "mkdir -p " + dir;
+    system(mkdirCmd.c_str());
+
+    FILE* f = fopen(outPath.c_str(), "wb");
+    if (f)
+    {
+        fwrite(buf, 1, size, f);
+        fclose(f);
+    }
+    AAsset_close(asset);
+    return outPath;
+}
+}  // namespace
+#endif
+
 using namespace engine::assets;
 using namespace engine::core;
 using namespace engine::ecs;
@@ -227,24 +265,44 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     ibl_.generateDefault();
 
     // ---- UI (font + renderer) -----------------------------------------------
+    // MsdfFont::loadFromFile uses fopen, which can't read APK assets on
+    // Android. Extract the font files to internal storage first.
 #ifdef __ANDROID__
-    // BitmapFont is embedded — no external assets, uses sprite shader.
-    if (bitmapFont_.createDebugFont())
     {
-        hudFont_ = &bitmapFont_;
-        hudFontLoaded_ = true;
+        const char* intDir = "/data/data/com.pixelperfect3.samplegame/cache";
+        std::string jsonPath = extractAssetToInternal(
+            "fonts/JetBrainsMono-msdf.json", intDir);
+        std::string pngPath = extractAssetToInternal(
+            "fonts/JetBrainsMono-msdf.png", intDir);
+        if (!jsonPath.empty() && !pngPath.empty() &&
+            msdfFont_.loadFromFile(jsonPath.c_str(), pngPath.c_str()))
+        {
+            hudFont_ = &msdfFont_;
+            hudFontLoaded_ = true;
+        }
+        else
+        {
+            std::fprintf(stderr, "SampleGame: MSDF font extract/load failed, "
+                                 "falling back to BitmapFont\n");
+            if (bitmapFont_.createDebugFont())
+            {
+                hudFont_ = &bitmapFont_;
+                hudFontLoaded_ = true;
+            }
+        }
     }
 #else
-    // MSDF atlas gives crisp text at any size on desktop.
     if (msdfFont_.loadFromFile("assets/fonts/JetBrainsMono-msdf.json",
                                "assets/fonts/JetBrainsMono-msdf.png"))
     {
         hudFont_ = &msdfFont_;
         hudFontLoaded_ = true;
     }
+    else
+    {
+        std::fprintf(stderr, "SampleGame: failed to load MSDF font\n");
+    }
 #endif
-    if (!hudFontLoaded_)
-        std::fprintf(stderr, "SampleGame: failed to load font\n");
     uiRenderer_.init();
 
     // ---- Shared cube mesh -------------------------------------------------

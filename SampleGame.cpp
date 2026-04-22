@@ -772,41 +772,36 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
     // Sama's AndroidGyro already normalizes gravity by 9.8, so
     // gravityX/Y/Z are in [-1, 1] (1.0 = 90° tilt).
     //
-    // We convert gravity to tilt angles (atan2) so that the input is
-    // linear regardless of the phone's base orientation — works the
-    // same whether held upright, at 45°, or lying flat in bed.
-    //
     // Device coords (portrait): X = right, Y = up, Z = out of screen.
     // Landscape 90° CCW: screen-forward = device -Y, screen-right = device +X.
     const auto& gyro = input.gyro();
     if (gyro.available)
     {
-        // Tilt angles from the gravity vector.  atan2 gives a linear
-        // mapping from any base orientation — unlike raw axis deltas
-        // which become tiny when the phone is nearly flat.
-        const float gx = gyro.gravityX;
-        const float gy = gyro.gravityY;
-        const float gz = gyro.gravityZ;
-        // Inclination of each axis relative to the horizontal plane.
-        // Using the perpendicular-plane magnitude as denominator makes
-        // these stable at ANY base orientation (upright, angled, or flat).
-        const float tiltX = std::atan2(gx, std::sqrt(gy * gy + gz * gz));
-        const float tiltY = std::atan2(gy, std::sqrt(gx * gx + gz * gz));
-
         if (!gyroCalibrated_)
         {
-            gyroBaseX_ = tiltX;
-            gyroBaseY_ = tiltY;
+            gyroBaseX_ = gyro.gravityX;
+            gyroBaseY_ = gyro.gravityY;
             gyroCalibrated_ = true;
         }
 
-        constexpr float kSensitivity = 1.6f;  // radians → axis; ~35° tilt = full input
-        constexpr float kDeadzone = 0.03f;     // radians (~1.7°)
+        float deltaX = gyro.gravityX - gyroBaseX_;
+        float deltaY = gyro.gravityY - gyroBaseY_;
 
-        float deltaX = tiltX - gyroBaseX_;
-        float deltaY = tiltY - gyroBaseY_;
+        // When the phone is flat, gravity is mostly along Z and the XY
+        // deltas for a given physical tilt become very small.  Adaptive
+        // gain scales them up so the controls feel the same regardless
+        // of whether you're sitting up or lying in bed.
+        float xyMag = std::sqrt(gyroBaseX_ * gyroBaseX_
+                              + gyroBaseY_ * gyroBaseY_);
+        float gain = 1.0f / std::max(xyMag, 0.2f);
+        gain = std::min(gain, 5.0f);
 
-        // Small deadzone so minor hand tremor doesn't move the ball.
+        deltaX *= gain;
+        deltaY *= gain;
+
+        constexpr float kSensitivity = 2.5f;
+        constexpr float kDeadzone = 0.04f;
+
         if (std::abs(deltaX) < kDeadzone) deltaX = 0.0f;
         if (std::abs(deltaY) < kDeadzone) deltaY = 0.0f;
 

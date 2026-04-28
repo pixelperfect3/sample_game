@@ -342,6 +342,22 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     perfHud_.init();
     perfHudInitialized_ = true;
     showPerfOverlay_ = kPerfOverlayDefault;
+
+    // Sama doesn't set view names itself — give the engine views readable
+    // labels so they show up correctly in the perf overlay (and in GPU
+    // debuggers like RenderDoc / AGI / Instruments).
+    for (uint16_t i = 0; i < engine::rendering::kMaxShadowViews; ++i)
+    {
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), "Shadow %u", i);
+        bgfx::setViewName(static_cast<bgfx::ViewId>(engine::rendering::kViewShadowBase + i),
+                          buf);
+    }
+    bgfx::setViewName(engine::rendering::kViewDepth,       "Depth Prepass");
+    bgfx::setViewName(engine::rendering::kViewOpaque,      "Opaque");
+    bgfx::setViewName(engine::rendering::kViewTransparent, "Transparent");
+    bgfx::setViewName(engine::rendering::kViewUi,          "UI 3D");
+    bgfx::setViewName(engine::rendering::kViewImGui,       "ImGui");
 #endif
 
     // ---- Shared cube mesh -------------------------------------------------
@@ -1647,17 +1663,19 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
                     "Pass", "CPU(ms)", "GPU(ms)");
 
     uint16_t row = startRow + 2;
-    const uint16_t maxRow = startRow + 12;
+    const uint16_t maxRow = startRow + 14;
     for (uint16_t i = 0; i < s->numViews && row < maxRow; ++i)
     {
         const bgfx::ViewStats& v = s->viewStats[i];
+        // Skip unnamed views — bgfx keeps a slot for every view ID, even
+        // ones the game never touches.  An empty name means we never
+        // labelled it, so it's almost certainly a no-op.
+        if (v.name[0] == '\0')
+            continue;
         const double passCpuMs = (cpuFreq > 0.0)
             ? 1000.0 * static_cast<double>(v.cpuTimeEnd - v.cpuTimeBegin) / cpuFreq : 0.0;
         const double passGpuMs = (gpuFreq > 0.0)
             ? 1000.0 * static_cast<double>(v.gpuTimeEnd - v.gpuTimeBegin) / gpuFreq : 0.0;
-        // Skip views with no measurable activity to keep the table tidy.
-        if (passCpuMs < 0.001 && passGpuMs < 0.001)
-            continue;
         const uint32_t color = (passGpuMs > 5.0 || passCpuMs > 5.0) ? kHot : kRow;
         perfHud_.printf(col0, row++, color, "%-18s %8.2f %8.2f",
                         v.name, passCpuMs, passGpuMs);

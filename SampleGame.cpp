@@ -1629,10 +1629,13 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
 #endif
 
     // Right-align: pick a column that fits the widest line (~65 chars)
-    // with a small right margin.  Cells are 8 px wide.
+    // with a right margin (~24 px) so text isn't clipped on Pixel 9 cutout.
+    // Cells are 8 px wide.
     constexpr uint16_t kBlockWidth = 67;  // chars
+    constexpr uint16_t kRightMargin = 4;  // chars (~32 px)
     const uint16_t cols = static_cast<uint16_t>(engine.fbWidth() / 8);
-    const uint16_t col0 = (cols > kBlockWidth + 1) ? (cols - kBlockWidth - 1) : 0;
+    const uint16_t col0 = (cols > kBlockWidth + kRightMargin)
+                              ? (cols - kBlockWidth - kRightMargin) : 0;
 
     perfHud_.printf(col0, startRow, kHeader,
                     "FPS %5.1f   CPU %5.2f ms   GPU %5.2f ms   Draws %4u   Prims %5u",

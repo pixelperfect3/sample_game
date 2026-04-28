@@ -1593,6 +1593,15 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     if (!showPerfOverlay_ || !perfHudInitialized_)
         return;
 
+    // bgfx only populates viewStats when the profiler debug flag is set.
+    // Enable it lazily on first show; cheap when already enabled.
+    static bool profilerEnabled = false;
+    if (!profilerEnabled)
+    {
+        bgfx::setDebug(BGFX_DEBUG_PROFILER);
+        profilerEnabled = true;
+    }
+
     const bgfx::Stats* s = bgfx::getStats();
     if (!s)
         return;
@@ -1610,17 +1619,27 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     constexpr uint32_t kRow    = 0xCFCFCFFF;  // light grey
     constexpr uint32_t kHot    = 0xFF6060FF;  // red (high-cost lines)
 
-    perfHud_.printf(0, 0, kHeader,
+    // Push the overlay below the Android status bar / camera cutout.
+    // DebugHud cells are 16 px tall; kAndroidTopInset (~50 px @ 1080) ≈ 3-4 rows.
+#ifdef __ANDROID__
+    const float dpi = static_cast<float>(engine.fbHeight()) / 1080.0f;
+    const uint16_t startRow = static_cast<uint16_t>((kAndroidTopInset * dpi) / 16.0f) + 1;
+#else
+    const uint16_t startRow = 0;
+#endif
+
+    perfHud_.printf(0, startRow, kHeader,
                     "FPS %5.1f   CPU %5.2f ms   GPU %5.2f ms   Draws %4u   Prims %5u",
                     fpsSmoothed_, frameCpuMs, frameGpuMs,
                     static_cast<unsigned>(s->numDraw),
                     static_cast<unsigned>(s->numPrims[0]));  // 0 = triangles
 
-    perfHud_.printf(0, 1, kHeader, "%-18s %8s %8s",
+    perfHud_.printf(0, startRow + 1, kHeader, "%-18s %8s %8s",
                     "Pass", "CPU(ms)", "GPU(ms)");
 
-    uint16_t row = 2;
-    for (uint16_t i = 0; i < s->numViews && row < 12; ++i)
+    uint16_t row = startRow + 2;
+    const uint16_t maxRow = startRow + 12;
+    for (uint16_t i = 0; i < s->numViews && row < maxRow; ++i)
     {
         const bgfx::ViewStats& v = s->viewStats[i];
         const double passCpuMs = (cpuFreq > 0.0)

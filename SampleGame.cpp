@@ -1628,13 +1628,19 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     const uint16_t startRow = 0;
 #endif
 
-    perfHud_.printf(0, startRow, kHeader,
+    // Right-align: pick a column that fits the widest line (~65 chars)
+    // with a small right margin.  Cells are 8 px wide.
+    constexpr uint16_t kBlockWidth = 67;  // chars
+    const uint16_t cols = static_cast<uint16_t>(engine.fbWidth() / 8);
+    const uint16_t col0 = (cols > kBlockWidth + 1) ? (cols - kBlockWidth - 1) : 0;
+
+    perfHud_.printf(col0, startRow, kHeader,
                     "FPS %5.1f   CPU %5.2f ms   GPU %5.2f ms   Draws %4u   Prims %5u",
                     fpsSmoothed_, frameCpuMs, frameGpuMs,
                     static_cast<unsigned>(s->numDraw),
                     static_cast<unsigned>(s->numPrims[0]));  // 0 = triangles
 
-    perfHud_.printf(0, startRow + 1, kHeader, "%-18s %8s %8s",
+    perfHud_.printf(col0, startRow + 1, kHeader, "%-18s %8s %8s",
                     "Pass", "CPU(ms)", "GPU(ms)");
 
     uint16_t row = startRow + 2;
@@ -1650,7 +1656,7 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
         if (passCpuMs < 0.001 && passGpuMs < 0.001)
             continue;
         const uint32_t color = (passGpuMs > 5.0 || passCpuMs > 5.0) ? kHot : kRow;
-        perfHud_.printf(0, row++, color, "%-18s %8.2f %8.2f",
+        perfHud_.printf(col0, row++, color, "%-18s %8.2f %8.2f",
                         v.name, passCpuMs, passGpuMs);
     }
 
@@ -1658,12 +1664,12 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     {
         size_t entityCount = 0;
         registry_->forEachEntity([&](EntityID) { ++entityCount; });
-        perfHud_.printf(0, row++, kRow, "Entities: %zu", entityCount);
+        perfHud_.printf(col0, row++, kRow, "Entities: %zu", entityCount);
     }
-    perfHud_.printf(0, row++, kRow, "Tex %u MB   RT %u MB",
+    perfHud_.printf(col0, row++, kRow, "Tex %u MB   RT %u MB",
                     static_cast<unsigned>(s->textureMemoryUsed >> 20),
                     static_cast<unsigned>(s->rtMemoryUsed >> 20));
-    perfHud_.printf(0, row, 0x808080FF,
+    perfHud_.printf(col0, row, 0x808080FF,
                     "[P] / tap top-right corner to toggle");
 
     perfHud_.end();

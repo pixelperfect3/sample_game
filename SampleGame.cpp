@@ -105,6 +105,16 @@ using namespace engine::rendering;
 
 namespace
 {
+// Compile-time perf-overlay toggle.  Set to 0 to compile out entirely
+// (zero binary cost, P key has no effect).  When 1, the overlay is
+// available; runtime visibility is controlled by `kPerfOverlayDefault`
+// (initial state) and the P key (toggle at runtime).
+#define SAMPLE_GAME_ENABLE_PERF_OVERLAY 1
+
+// Initial visibility.  Toggle at runtime: P key (desktop) or tap the
+// top-right ~120 px corner (Android).  Set false to start hidden.
+constexpr bool kPerfOverlayDefault = true;
+
 constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;
 constexpr float kTau = 6.2831853f;
@@ -327,6 +337,12 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
         std::fprintf(stderr, "SampleGame: failed to load MSDF font\n");
     }
     uiRenderer_.init();
+
+#if SAMPLE_GAME_ENABLE_PERF_OVERLAY
+    perfHud_.init();
+    perfHudInitialized_ = true;
+    showPerfOverlay_ = kPerfOverlayDefault;
+#endif
 
     // ---- Shared cube mesh -------------------------------------------------
     MeshData cubeData = makeCubeMeshData();
@@ -872,6 +888,39 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
 
 void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
 {
+#if SAMPLE_GAME_ENABLE_PERF_OVERLAY
+    // P toggles the perf overlay (desktop).
+    if (engine.inputState().isKeyPressed(Key::P))
+        showPerfOverlay_ = !showPerfOverlay_;
+
+    // Tap top-right ~120 px corner toggles on Android (and via mouse).
+    {
+        const auto& in = engine.inputState();
+        if (in.isMouseButtonPressed(engine::input::MouseButton::Left))
+        {
+#ifdef __ANDROID__
+            const float mx = static_cast<float>(in.mouseX());
+            const float my = static_cast<float>(in.mouseY());
+#else
+            const float mx = static_cast<float>(in.mouseX()) * engine.contentScaleX();
+            const float my = static_cast<float>(in.mouseY()) * engine.contentScaleY();
+#endif
+            const float W = static_cast<float>(engine.fbWidth());
+            const float corner = 120.0f * (static_cast<float>(engine.fbHeight()) / 1080.0f);
+            if (mx > W - corner && my < corner)
+                showPerfOverlay_ = !showPerfOverlay_;
+        }
+    }
+
+    // Smoothed FPS for stable display: low-pass dt → fps.
+    if (dt > 0.0f)
+    {
+        const float instFps = 1.0f / dt;
+        const float k = 1.0f - std::exp(-3.0f * dt);
+        fpsSmoothed_ = fpsSmoothed_ + (instFps - fpsSmoothed_) * k;
+    }
+#endif
+
     if (showTitleScreen_) return;
 
     // Drain async asset uploads; apply GLB meshes once Ready.
@@ -1175,6 +1224,9 @@ void SampleGame::onRender(Engine& engine)
         // time we finish a level.
         endLevelCanvasBuilt_ = false;
     }
+
+    // Perf overlay last — sits on top of everything.
+    renderPerfOverlay(engine, 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -1517,6 +1569,13 @@ void SampleGame::dispatchMouseEvents(engine::core::Engine& engine, engine::ui::U
 void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)
 {
     uiRenderer_.shutdown();
+#if SAMPLE_GAME_ENABLE_PERF_OVERLAY
+    if (perfHudInitialized_)
+    {
+        perfHud_.shutdown();
+        perfHudInitialized_ = false;
+    }
+#endif
     if (hudFontLoaded_)
     {
         msdfFont_.shutdown();
@@ -1526,4 +1585,68 @@ void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)
     ibl_.shutdown();
     physics_.shutdown();
     audio_.shutdown();
+}
+
+void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
+{
+#if SAMPLE_GAME_ENABLE_PERF_OVERLAY
+    if (!showPerfOverlay_ || !perfHudInitialized_)
+        return;
+
+    const bgfx::Stats* s = bgfx::getStats();
+    if (!s)
+        return;
+
+    const double cpuFreq = static_cast<double>(s->cpuTimerFreq);
+    const double gpuFreq = static_cast<double>(s->gpuTimerFreq);
+    const double frameCpuMs = (cpuFreq > 0.0)
+        ? 1000.0 * static_cast<double>(s->cpuTimeEnd - s->cpuTimeBegin) / cpuFreq : 0.0;
+    const double frameGpuMs = (gpuFreq > 0.0)
+        ? 1000.0 * static_cast<double>(s->gpuTimeEnd - s->gpuTimeBegin) / gpuFreq : 0.0;
+
+    perfHud_.begin(engine.fbWidth(), engine.fbHeight());
+
+    constexpr uint32_t kHeader = 0xFFFF80FF;  // pale yellow
+    constexpr uint32_t kRow    = 0xCFCFCFFF;  // light grey
+    constexpr uint32_t kHot    = 0xFF6060FF;  // red (high-cost lines)
+
+    perfHud_.printf(0, 0, kHeader,
+                    "FPS %5.1f   CPU %5.2f ms   GPU %5.2f ms   Draws %4u   Prims %5u",
+                    fpsSmoothed_, frameCpuMs, frameGpuMs,
+                    static_cast<unsigned>(s->numDraw),
+                    static_cast<unsigned>(s->numPrims[0]));  // 0 = triangles
+
+    perfHud_.printf(0, 1, kHeader, "%-18s %8s %8s",
+                    "Pass", "CPU(ms)", "GPU(ms)");
+
+    uint16_t row = 2;
+    for (uint16_t i = 0; i < s->numViews && row < 12; ++i)
+    {
+        const bgfx::ViewStats& v = s->viewStats[i];
+        const double passCpuMs = (cpuFreq > 0.0)
+            ? 1000.0 * static_cast<double>(v.cpuTimeEnd - v.cpuTimeBegin) / cpuFreq : 0.0;
+        const double passGpuMs = (gpuFreq > 0.0)
+            ? 1000.0 * static_cast<double>(v.gpuTimeEnd - v.gpuTimeBegin) / gpuFreq : 0.0;
+        // Skip views with no measurable activity to keep the table tidy.
+        if (passCpuMs < 0.001 && passGpuMs < 0.001)
+            continue;
+        const uint32_t color = (passGpuMs > 5.0 || passCpuMs > 5.0) ? kHot : kRow;
+        perfHud_.printf(0, row++, color, "%-18s %8.2f %8.2f",
+                        v.name, passCpuMs, passGpuMs);
+    }
+
+    if (registry_)
+    {
+        size_t entityCount = 0;
+        registry_->forEachEntity([&](EntityID) { ++entityCount; });
+        perfHud_.printf(0, row++, kRow, "Entities: %zu", entityCount);
+    }
+    perfHud_.printf(0, row++, kRow, "Tex %u MB   RT %u MB",
+                    static_cast<unsigned>(s->textureMemoryUsed >> 20),
+                    static_cast<unsigned>(s->rtMemoryUsed >> 20));
+    perfHud_.printf(0, row, 0x808080FF,
+                    "[P] / tap top-right corner to toggle");
+
+    perfHud_.end();
+#endif
 }

@@ -18,6 +18,7 @@
 #include "engine/rendering/IblResources.h"
 #include "engine/rendering/systems/DrawCallBuildSystem.h"
 #include "engine/threading/ThreadPool.h"
+#include "engine/ui/DebugHud.h"
 #include "engine/ui/MsdfFont.h"
 #include "engine/ui/UiCanvas.h"
 #include "engine/ui/UiDrawList.h"
@@ -138,4 +139,11 @@ private:
     void buildTitleCanvas();
     void buildEndLevelCanvas(bool hasNextLevel);
     void dispatchMouseEvents(engine::core::Engine& engine, engine::ui::UiCanvas& canvas);
+
+    // Perf overlay (toggle with P key; default state set in SampleGame.cpp).
+    engine::ui::DebugHud perfHud_;
+    bool perfHudInitialized_ = false;
+    bool showPerfOverlay_ = false;
+    float fpsSmoothed_ = 60.0f;
+    void renderPerfOverlay(engine::core::Engine& engine, float dt);
 };

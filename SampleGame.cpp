@@ -1644,14 +1644,18 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     const uint16_t startRow = 0;
 #endif
 
-    // Right-align: pick a column that fits the widest line (~65 chars)
-    // with a right margin (~24 px) so text isn't clipped on Pixel 9 cutout.
-    // Cells are 8 px wide.
-    constexpr uint16_t kBlockWidth = 67;  // chars
-    constexpr uint16_t kRightMargin = 4;  // chars (~32 px)
-    const uint16_t cols = static_cast<uint16_t>(engine.fbWidth() / 8);
-    const uint16_t col0 = (cols > kBlockWidth + kRightMargin)
-                              ? (cols - kBlockWidth - kRightMargin) : 0;
+    // Right-align: DebugHud positions text by `col * 8 px`, but the
+    // BitmapFont actually renders glyphs ~16 px wide at kFontSize=16,
+    // so the visual block is wider than `numChars * 8`.  Compute the
+    // start position in pixels from the actual rendered width, then
+    // convert back to a column index.
+    constexpr uint16_t kCharWidthPx = 16;   // empirical glyph advance
+    constexpr uint16_t kBlockChars  = 67;   // longest format string
+    constexpr uint16_t kRightMarginPx = 32; // ~4 chars of breathing room
+    const uint32_t blockPx = static_cast<uint32_t>(kBlockChars) * kCharWidthPx;
+    const uint32_t startPx = (engine.fbWidth() > blockPx + kRightMarginPx)
+        ? (engine.fbWidth() - blockPx - kRightMarginPx) : 0;
+    const uint16_t col0 = static_cast<uint16_t>(startPx / 8);
 
     perfHud_.printf(col0, startRow, kHeader,
                     "FPS %5.1f   CPU %5.2f ms   GPU %5.2f ms   Draws %4u   Prims %5u",

@@ -145,5 +145,16 @@ private:
     bool perfHudInitialized_ = false;
     bool showPerfOverlay_ = false;
     float fpsSmoothed_ = 60.0f;
+
+    // Game-side CPU timings (in ms) — bgfx::Stats only measures bgfx
+    // submission cost, so we time the major game/engine sections ourselves
+    // to find where actual CPU time is being spent.
+    float cpuMsOnFixedUpdate_ = 0.0f;
+    float cpuMsOnUpdate_      = 0.0f;
+    float cpuMsOnRender_      = 0.0f;
+    float cpuMsPhysics_       = 0.0f;
+    float cpuMsShadowSubmit_  = 0.0f;
+    float cpuMsDrawCallUpdate_ = 0.0f;
+
     void renderPerfOverlay(engine::core::Engine& engine, float dt);
 };

@@ -1,6 +1,8 @@
 #include "SampleGame.h"
 
 #include <algorithm>
+#include <cfloat>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <vector>
@@ -52,7 +54,6 @@ void extractAllAssets(const char* internalDir)
         {"fonts/JetBrainsMono-msdf.json",     "assets/fonts/JetBrainsMono-msdf.json"},
         {"fonts/JetBrainsMono-msdf.png",      "assets/fonts/JetBrainsMono-msdf.png"},
         {"levels/plank.json",                 "levels/plank.json"},
-        {"levels/figure8.json",               "levels/figure8.json"},
         {"project.json",                      "project.json"},
     };
     int ok = 0;
@@ -119,6 +120,31 @@ constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;
 constexpr float kTau = 6.2831853f;
 constexpr float kAndroidTopInset = 50.f;  // pixels (scaled by dpi)
+
+#if SAMPLE_GAME_ENABLE_PERF_OVERLAY
+// RAII scope timer — writes elapsed milliseconds to `out` on destruction.
+// Designed to be a near-zero-cost wrapper: one steady_clock read pair.
+class ScopedCpuTimer
+{
+public:
+    explicit ScopedCpuTimer(float& out)
+        : start_(std::chrono::steady_clock::now()), out_(&out) {}
+    ~ScopedCpuTimer()
+    {
+        const auto end = std::chrono::steady_clock::now();
+        const double ns =
+            std::chrono::duration<double, std::nano>(end - start_).count();
+        *out_ = static_cast<float>(ns / 1.0e6);
+    }
+
+private:
+    std::chrono::steady_clock::time_point start_;
+    float* out_;
+};
+#define SAMPLE_CPU_TIMER(member) ScopedCpuTimer _scoped_timer_##member(member)
+#else
+#define SAMPLE_CPU_TIMER(member) ((void)0)
+#endif
 
 static void setupUiView(bgfx::ViewId viewId, uint16_t w, uint16_t h, const char* name)
 {
@@ -422,25 +448,8 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
             fclose(check);
         }
     }
-    {
-        FILE* check = fopen("levels/figure8.json", "r");
-        if (!check)
-        {
-            // Figure-8 level
-            Registry tempReg;
-            spawnFigureEightFloor(tempReg, cubeMeshId_, greyMatId_);
-
-            engine::scene::SceneSerializer ser;
-            ser.registerEngineComponents();
-            registerCustomComponents(ser, cubeMeshId_);
-            ser.saveScene(tempReg, engine.resources(), "levels/figure8.json");
-            std::fprintf(stderr, "SampleGame: saved levels/figure8.json\n");
-        }
-        else
-        {
-            fclose(check);
-        }
-    }
+    // Figure-8 is built procedurally each load (single merged mesh —
+    // can't be serialized through the scene system).  No JSON cache.
 
     // Don't load a level yet — title screen shows first.
     // loadLevel() is called when the player clicks "Start Game".
@@ -497,13 +506,52 @@ void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
     assetsApplied_ = true;
 }
 
-void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint32_t matId)
+// ---------------------------------------------------------------------------
+// Local copies of MeshBuilder.cpp's static oct-encoding helpers — used to
+// build the merged figure-8 floor mesh.  These are static there, so we
+// duplicate them here.  Match the shader's expected encoding exactly.
+// ---------------------------------------------------------------------------
+namespace
 {
-    // Tessellate each ring into angular×radial wedges. Each wedge is a small
-    // box oriented tangent to the ring, so edges follow the ring curvature
-    // (much smoother than an axis-aligned grid).
-    constexpr int kAngular = 64;          // angular segments per ring
-    constexpr int kRadial = 3;            // radial layers across the ring width
+glm::vec2 octWrapLocal(glm::vec2 v)
+{
+    return (glm::vec2(1.0f) - glm::abs(glm::vec2(v.y, v.x))) *
+           glm::vec2(v.x >= 0.0f ? 1.0f : -1.0f, v.y >= 0.0f ? 1.0f : -1.0f);
+}
+glm::vec2 encodeOctF(glm::vec3 n)
+{
+    n /= (std::abs(n.x) + std::abs(n.y) + std::abs(n.z));
+    return (n.z >= 0.0f) ? glm::vec2(n.x, n.y)
+                         : octWrapLocal(glm::vec2(n.x, n.y));
+}
+glm::i16vec2 encodeOct16(glm::vec3 n)
+{
+    const glm::vec2 oct = encodeOctF(n);
+    return glm::i16vec2(static_cast<int16_t>(std::round(oct.x * 32767.0f)),
+                        static_cast<int16_t>(std::round(oct.y * 32767.0f)));
+}
+glm::u8vec4 encodeTan8(glm::vec3 t, float sign)
+{
+    const glm::vec2 oct = encodeOctF(t);
+    const auto u8 = [](float v) -> uint8_t
+    { return static_cast<uint8_t>(std::round((v * 0.5f + 0.5f) * 255.0f)); };
+    return glm::u8vec4(u8(oct.x), u8(oct.y), 128u, u8(sign));
+}
+}  // namespace
+
+void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t /*meshId*/,
+                                       uint32_t matId)
+{
+    // ------------------------------------------------------------------
+    // Procedural figure-8 floor — single merged mesh.
+    //
+    // Previously this spawned 384 individual cube entities (2 lobes × 64
+    // angular × 3 radial), each with its own draw call + kinematic body.
+    // Now the geometry is baked into ONE mesh (one draw call for opaque
+    // and one for shadow), and physics uses a single safety floor box.
+    // ------------------------------------------------------------------
+    constexpr int kAngular = 64;
+    constexpr int kRadial = 3;
     constexpr float kROuter = 4.0f;
     constexpr float kRInner = 2.5f;
     constexpr float kCx = 3.5f;
@@ -513,6 +561,146 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint
     const float halfThick = kThick * 0.5f;
     const glm::vec3 centers[2] = {{-kCx, 0.0f, 0.0f}, {kCx, 0.0f, 0.0f}};
 
+    // Reference faces of a unit cube (matches MeshBuilder::makeCubeMeshData).
+    struct Face
+    {
+        glm::vec3 normal;
+        glm::vec3 tangent;
+        glm::vec3 corners[4];
+        glm::vec2 uvs[4];
+    };
+    static const Face faces[6] = {
+        {{ 1, 0, 0}, { 0, 0,-1},
+         {{ 0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f}},
+         {{0,0},{1,0},{1,1},{0,1}}},
+        {{-1, 0, 0}, { 0, 0, 1},
+         {{-0.5f,-0.5f,-0.5f},{-0.5f,-0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},{-0.5f, 0.5f,-0.5f}},
+         {{0,0},{1,0},{1,1},{0,1}}},
+        {{ 0, 1, 0}, { 1, 0, 0},
+         {{-0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f,-0.5f},{-0.5f, 0.5f,-0.5f}},
+         {{0,0},{1,0},{1,1},{0,1}}},
+        {{ 0,-1, 0}, { 1, 0, 0},
+         {{-0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f, 0.5f},{-0.5f,-0.5f, 0.5f}},
+         {{0,0},{1,0},{1,1},{0,1}}},
+        {{ 0, 0, 1}, { 1, 0, 0},
+         {{-0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{-0.5f, 0.5f, 0.5f}},
+         {{0,0},{1,0},{1,1},{0,1}}},
+        {{ 0, 0,-1}, {-1, 0, 0},
+         {{ 0.5f,-0.5f,-0.5f},{-0.5f,-0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f}},
+         {{0,0},{1,0},{1,1},{0,1}}},
+    };
+
+    constexpr int kWedges = 2 * kAngular * kRadial;          // 384
+    constexpr int kVertsPerWedge = 24;                       // 6 faces × 4
+    constexpr int kIdxPerWedge = 36;                         // 6 faces × 6
+    MeshData md;
+    md.positions.reserve(kWedges * kVertsPerWedge * 3);
+    md.normals.reserve(kWedges * kVertsPerWedge * 2);
+    md.tangents.reserve(kWedges * kVertsPerWedge * 4);
+    md.uvs.reserve(kWedges * kVertsPerWedge * 2);
+    md.indices.reserve(kWedges * kIdxPerWedge);
+
+    glm::vec3 boundsMin{ FLT_MAX,  FLT_MAX,  FLT_MAX};
+    glm::vec3 boundsMax{-FLT_MAX, -FLT_MAX, -FLT_MAX};
+
+    for (int circle = 0; circle < 2; ++circle)
+    {
+        const glm::vec3 center = centers[circle];
+        for (int a = 0; a < kAngular; ++a)
+        {
+            const float theta = dTheta * (static_cast<float>(a) + 0.5f);
+            const float cosT = std::cos(theta);
+            const float sinT = std::sin(theta);
+            const glm::quat rot = glm::angleAxis(-theta, glm::vec3(0.0f, 1.0f, 0.0f));
+            for (int r = 0; r < kRadial; ++r)
+            {
+                const float rMid = kRInner + dR * (static_cast<float>(r) + 0.5f);
+                const float arcLen = dTheta * rMid;
+                const glm::vec3 pos{center.x + rMid * cosT,
+                                    -halfThick,
+                                    center.z + rMid * sinT};
+                // 2% overlap → no visible seam, no crack to fall through.
+                const glm::vec3 scl{dR * 1.02f, kThick, arcLen * 1.02f};
+
+                const uint16_t baseVtx =
+                    static_cast<uint16_t>(md.positions.size() / 3);
+
+                for (int fi = 0; fi < 6; ++fi)
+                {
+                    const Face& f = faces[fi];
+                    // Rotation-only on normals/tangents (uniform rotation,
+                    // non-uniform scale → upper-3x3 inverse-transpose simplifies
+                    // to just rotating because we apply Y-axis rotation only).
+                    const glm::vec3 n = rot * f.normal;
+                    const glm::vec3 t = rot * f.tangent;
+                    const glm::i16vec2 encN = encodeOct16(n);
+                    const glm::u8vec4 encT = encodeTan8(t, 1.0f);
+
+                    for (int ci = 0; ci < 4; ++ci)
+                    {
+                        // Corner = pos + rot * (scl ⊙ unit_corner)
+                        const glm::vec3 local{f.corners[ci].x * scl.x,
+                                              f.corners[ci].y * scl.y,
+                                              f.corners[ci].z * scl.z};
+                        const glm::vec3 world = pos + rot * local;
+                        md.positions.push_back(world.x);
+                        md.positions.push_back(world.y);
+                        md.positions.push_back(world.z);
+                        boundsMin = glm::min(boundsMin, world);
+                        boundsMax = glm::max(boundsMax, world);
+
+                        md.normals.push_back(encN.x);
+                        md.normals.push_back(encN.y);
+
+                        md.tangents.push_back(encT.x);
+                        md.tangents.push_back(encT.y);
+                        md.tangents.push_back(encT.z);
+                        md.tangents.push_back(encT.w);
+
+                        const uint32_t packed = glm::packHalf2x16(f.uvs[ci]);
+                        md.uvs.push_back(static_cast<uint16_t>(packed & 0xFFFFu));
+                        md.uvs.push_back(static_cast<uint16_t>((packed >> 16) & 0xFFFFu));
+                    }
+                    const uint16_t b = static_cast<uint16_t>(baseVtx + fi * 4);
+                    md.indices.push_back(b + 0);
+                    md.indices.push_back(b + 1);
+                    md.indices.push_back(b + 2);
+                    md.indices.push_back(b + 0);
+                    md.indices.push_back(b + 2);
+                    md.indices.push_back(b + 3);
+                }
+            }
+        }
+    }
+    md.boundsMin = boundsMin;
+    md.boundsMax = boundsMax;
+
+    const Mesh floorMesh = buildMesh(md);
+    if (!floorMesh.isValid())
+    {
+        std::fprintf(stderr, "spawnFigureEightFloor: buildMesh failed\n");
+        return;
+    }
+    const uint32_t floorMeshId = engine_->resources().addMesh(Mesh(floorMesh));
+
+    // Single visible entity at origin (mesh is already in world space).
+    EntityID floor = registry.createEntity();
+    TransformComponent tc{};
+    tc.position = {0, 0, 0};
+    tc.rotation = glm::quat(1, 0, 0, 0);
+    tc.scale = {1, 1, 1};
+    tc.flags = 1;
+    registry.emplace<TransformComponent>(floor, tc);
+    registry.emplace<WorldTransformComponent>(floor);
+    registry.emplace<MeshComponent>(floor, MeshComponent{floorMeshId});
+    registry.emplace<MaterialComponent>(floor, MaterialComponent{matId});
+    registry.emplace<VisibleTag>(floor);
+    registry.emplace<ShadowVisibleTag>(floor, ShadowVisibleTag{0xFF});
+
+    // Physics: keep the original 384 small box colliders so the ball rolls
+    // smoothly along curved tangent surfaces.  These are pure colliders
+    // (no draw component), so the physics scaling is unchanged but the
+    // render-side scaling drops from 384 → 1 per pass.
     for (int circle = 0; circle < 2; ++circle)
     {
         const glm::vec3 center = centers[circle];
@@ -526,32 +714,27 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t meshId, uint
                 const float rMid = kRInner + dR * (static_cast<float>(r) + 0.5f);
                 const float arcLen = dTheta * rMid;
 
-                EntityID tile = registry.createEntity();
-                TransformComponent tc{};
-                tc.position = {center.x + rMid * cosT, -halfThick, center.z + rMid * sinT};
-                tc.rotation = glm::angleAxis(-theta, glm::vec3(0.0f, 1.0f, 0.0f));
-                // 2% overlap in both dims prevents visible seams and
-                // guarantees no crack the ball could fall through.
-                tc.scale = {dR * 1.02f, kThick, arcLen * 1.02f};
-                tc.flags = 1;
-                registry.emplace<TransformComponent>(tile, tc);
-                registry.emplace<WorldTransformComponent>(tile);
-                registry.emplace<MeshComponent>(tile, MeshComponent{meshId});
-                registry.emplace<MaterialComponent>(tile, MaterialComponent{matId});
-                registry.emplace<VisibleTag>(tile);
-                registry.emplace<ShadowVisibleTag>(tile, ShadowVisibleTag{0xFF});
+                EntityID col = registry.createEntity();
+                TransformComponent t2{};
+                t2.position = {center.x + rMid * cosT, -halfThick,
+                               center.z + rMid * sinT};
+                t2.rotation = glm::angleAxis(-theta, glm::vec3(0.0f, 1.0f, 0.0f));
+                t2.scale = {1, 1, 1};
+                t2.flags = 1;
+                registry.emplace<TransformComponent>(col, t2);
+                registry.emplace<WorldTransformComponent>(col);
 
                 RigidBodyComponent rb;
                 rb.mass = 0.0f;
                 rb.type = BodyType::Kinematic;
                 rb.friction = 0.8f;
                 rb.restitution = 0.1f;
-                registry.emplace<RigidBodyComponent>(tile, rb);
+                registry.emplace<RigidBodyComponent>(col, rb);
 
-                ColliderComponent col;
-                col.shape = ColliderShape::Box;
-                col.halfExtents = {dR * 0.51f, halfThick, arcLen * 0.51f};
-                registry.emplace<ColliderComponent>(tile, col);
+                ColliderComponent cc;
+                cc.shape = ColliderShape::Box;
+                cc.halfExtents = {dR * 0.51f, halfThick, arcLen * 0.51f};
+                registry.emplace<ColliderComponent>(col, cc);
             }
         }
     }
@@ -656,15 +839,13 @@ void SampleGame::loadLevel(Engine& engine, Registry& registry, int level)
     }
     else if (level == 1)
     {
-        // Figure-8 level
+        // Figure-8 level — built procedurally as a single merged mesh
+        // (one draw call per pass).  We can't serialize a runtime-built
+        // mesh, so this skips the JSON cache path entirely.
         ballStartPos_ = {-7.0f, kBallRadius, 0.0f};
         coinCount_ = 3;
 
-        engine::scene::SceneSerializer ser;
-        ser.registerEngineComponents();
-        registerCustomComponents(ser, cubeMeshId_);
-        ser.loadScene("levels/figure8.json", registry,
-                      engine.resources(), assets_);
+        spawnFigureEightFloor(registry, cubeMeshId_, greyMatId_);
 
         // Invisible safety floor at y=-20
         groundEntity_ = registry.createEntity();
@@ -782,6 +963,7 @@ void SampleGame::spawnCoin(Registry& registry, int index)
 void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt)
 {
     if (showTitleScreen_) return;
+    SAMPLE_CPU_TIMER(cpuMsOnFixedUpdate_);
 
     // Apply directional force to the ball while movement keys are held.
     // Force is persistent per fixed step, so holding a direction accelerates.
@@ -853,7 +1035,10 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
             physics_.applyForce(rb->bodyID, {force.x, 0.0f, force.z});
     }
 
-    physicsSys_.update(registry, physics_, fixedDt);
+    {
+        SAMPLE_CPU_TIMER(cpuMsPhysics_);
+        physicsSys_.update(registry, physics_, fixedDt);
+    }
 
     // If the ball falls off the figure-8:
     //   - Mid-game: reset the level.
@@ -904,6 +1089,7 @@ void SampleGame::onFixedUpdate(Engine& engine, Registry& registry, float fixedDt
 
 void SampleGame::onUpdate(Engine& engine, Registry& registry, float dt)
 {
+    SAMPLE_CPU_TIMER(cpuMsOnUpdate_);
 #if SAMPLE_GAME_ENABLE_PERF_OVERLAY
     // P toggles the perf overlay (desktop).
     if (engine.inputState().isKeyPressed(Key::P))
@@ -1025,6 +1211,7 @@ void SampleGame::resetLevel(Registry& registry)
 
 void SampleGame::onRender(Engine& engine)
 {
+    SAMPLE_CPU_TIMER(cpuMsOnRender_);
     engine.renderer().beginFrameDirect();
 
     const auto W = engine.fbWidth();
@@ -1119,7 +1306,11 @@ void SampleGame::onRender(Engine& engine)
     if (!registry_)
         return;
 
-    drawCallSys_.submitShadowDrawCalls(*registry_, engine.resources(), engine.shadowProgram(), 0);
+    {
+        SAMPLE_CPU_TIMER(cpuMsShadowSubmit_);
+        drawCallSys_.submitShadowDrawCalls(*registry_, engine.resources(),
+                                           engine.shadowProgram(), 0);
+    }
 
     RenderPass(kViewOpaque)
         .rect(0, 0, W, H)
@@ -1150,8 +1341,11 @@ void SampleGame::onRender(Engine& engine)
         frame.brdfLut = ibl_.brdfLut();
     }
 
-    drawCallSys_.update(*registry_, engine.resources(), engine.pbrProgram(), engine.uniforms(),
-                        frame);
+    {
+        SAMPLE_CPU_TIMER(cpuMsDrawCallUpdate_);
+        drawCallSys_.update(*registry_, engine.resources(), engine.pbrProgram(),
+                            engine.uniforms(), frame);
+    }
 
     // ---- HUD --------------------------------------------------------------
     const int collected = coinCount_ - coinsRemaining_;
@@ -1667,7 +1861,7 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
                     "Pass", "CPU(ms)", "GPU(ms)");
 
     uint16_t row = startRow + 2;
-    const uint16_t maxRow = startRow + 14;
+    const uint16_t maxRow = startRow + 12;  // cap engine-pass rows; game CPU follows below
     for (uint16_t i = 0; i < s->numViews && row < maxRow; ++i)
     {
         const bgfx::ViewStats& v = s->viewStats[i];
@@ -1684,6 +1878,21 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
         perfHud_.printf(col0, row++, color, "%-18s %8.2f %8.2f",
                         v.name, passCpuMs, passGpuMs);
     }
+
+    // Game-side CPU timings — bgfx::Stats only measures bgfx submission,
+    // so the bulk of frame CPU time lives in these sections.
+    perfHud_.printf(col0, row++, kHeader, "%-18s %8s",
+                    "Game CPU", "ms");
+    auto gameRow = [&](const char* name, float ms) {
+        const uint32_t color = (ms > 5.0f) ? kHot : kRow;
+        perfHud_.printf(col0, row++, color, "%-18s %8.2f", name, ms);
+    };
+    gameRow("onFixedUpdate",   cpuMsOnFixedUpdate_);
+    gameRow("  Physics",       cpuMsPhysics_);
+    gameRow("onUpdate",        cpuMsOnUpdate_);
+    gameRow("onRender",        cpuMsOnRender_);
+    gameRow("  ShadowSubmit",  cpuMsShadowSubmit_);
+    gameRow("  DrawCallUpdate",cpuMsDrawCallUpdate_);
 
     if (registry_)
     {

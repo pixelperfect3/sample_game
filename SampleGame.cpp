@@ -697,10 +697,13 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t /*meshId*/,
     registry.emplace<VisibleTag>(floor);
     registry.emplace<ShadowVisibleTag>(floor, ShadowVisibleTag{0xFF});
 
-    // Physics: keep the original 384 small box colliders so the ball rolls
-    // smoothly along curved tangent surfaces.  These are pure colliders
-    // (no draw component), so the physics scaling is unchanged but the
-    // render-side scaling drops from 384 → 1 per pass.
+    // Physics: one collider per angular segment (kRadial=1), Static type.
+    // Going from 384 (Kinematic) → 128 (Static) eliminates 384 per-fixed-step
+    // moveKinematic calls AND lets Jolt place bodies in the static broadphase
+    // tree, which has cheaper queries than the dynamic/kinematic tree.
+    // kAngular=64 tangential steps still give the ball a smooth roll.
+    constexpr int kPhysRadial = 1;
+    const float dRPhys = (kROuter - kRInner) / static_cast<float>(kPhysRadial);
     for (int circle = 0; circle < 2; ++circle)
     {
         const glm::vec3 center = centers[circle];
@@ -709,9 +712,9 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t /*meshId*/,
             const float theta = dTheta * (static_cast<float>(a) + 0.5f);
             const float cosT = std::cos(theta);
             const float sinT = std::sin(theta);
-            for (int r = 0; r < kRadial; ++r)
+            for (int r = 0; r < kPhysRadial; ++r)
             {
-                const float rMid = kRInner + dR * (static_cast<float>(r) + 0.5f);
+                const float rMid = kRInner + dRPhys * (static_cast<float>(r) + 0.5f);
                 const float arcLen = dTheta * rMid;
 
                 EntityID col = registry.createEntity();
@@ -726,14 +729,14 @@ void SampleGame::spawnFigureEightFloor(Registry& registry, uint32_t /*meshId*/,
 
                 RigidBodyComponent rb;
                 rb.mass = 0.0f;
-                rb.type = BodyType::Kinematic;
+                rb.type = BodyType::Static;
                 rb.friction = 0.8f;
                 rb.restitution = 0.1f;
                 registry.emplace<RigidBodyComponent>(col, rb);
 
                 ColliderComponent cc;
                 cc.shape = ColliderShape::Box;
-                cc.halfExtents = {dR * 0.51f, halfThick, arcLen * 0.51f};
+                cc.halfExtents = {dRPhys * 0.51f, halfThick, arcLen * 0.51f};
                 registry.emplace<ColliderComponent>(col, cc);
             }
         }

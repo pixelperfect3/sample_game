@@ -1877,9 +1877,22 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
             ? 1000.0 * static_cast<double>(v.cpuTimeEnd - v.cpuTimeBegin) / cpuFreq : 0.0;
         const double passGpuMs = (gpuFreq > 0.0)
             ? 1000.0 * static_cast<double>(v.gpuTimeEnd - v.gpuTimeBegin) / gpuFreq : 0.0;
+        // Filter out the bgfx GPU timer artifact that fires on views whose
+        // framebuffer is reconfigured mid-frame (begin/end timestamps come
+        // from inconsistent contexts).  Negatives or absurdly large values
+        // are not real measurements — show them as `--`.
+        const bool gpuValid = passGpuMs >= 0.0 && passGpuMs < 100.0;
         const uint32_t color = (passGpuMs > 5.0 || passCpuMs > 5.0) ? kHot : kRow;
-        perfHud_.printf(col0, row++, color, "%-18s %8.2f %8.2f",
-                        v.name, passCpuMs, passGpuMs);
+        if (gpuValid)
+        {
+            perfHud_.printf(col0, row++, color, "%-18s %8.2f %8.2f",
+                            v.name, passCpuMs, passGpuMs);
+        }
+        else
+        {
+            perfHud_.printf(col0, row++, color, "%-18s %8.2f %8s",
+                            v.name, passCpuMs, "--");
+        }
     }
 
     // Game-side CPU timings — bgfx::Stats only measures bgfx submission,

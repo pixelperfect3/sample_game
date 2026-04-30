@@ -19,6 +19,7 @@
 #include "engine/input/Key.h"
 #include "engine/physics/PhysicsComponents.h"
 #include "engine/rendering/EcsComponents.h"
+#include "engine/rendering/FrameStats.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/MeshBuilder.h"
 #include "engine/rendering/RenderPass.h"
@@ -145,14 +146,6 @@ private:
 #else
 #define SAMPLE_CPU_TIMER(member) ((void)0)
 #endif
-
-static void setupUiView(bgfx::ViewId viewId, uint16_t w, uint16_t h, const char* name)
-{
-    bgfx::setViewName(viewId, name);
-    bgfx::setViewRect(viewId, 0, 0, w, h);
-    bgfx::setViewClear(viewId, BGFX_CLEAR_NONE);
-    bgfx::touch(viewId);
-}
 
 std::vector<uint8_t> readFileBytes(const char* path)
 {
@@ -368,22 +361,8 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     perfHud_.init();
     perfHudInitialized_ = true;
     showPerfOverlay_ = kPerfOverlayDefault;
-
-    // Sama doesn't set view names itself — give the engine views readable
-    // labels so they show up correctly in the perf overlay (and in GPU
-    // debuggers like RenderDoc / AGI / Instruments).
-    for (uint16_t i = 0; i < engine::rendering::kMaxShadowViews; ++i)
-    {
-        char buf[24];
-        std::snprintf(buf, sizeof(buf), "Shadow %u", i);
-        bgfx::setViewName(static_cast<bgfx::ViewId>(engine::rendering::kViewShadowBase + i),
-                          buf);
-    }
-    bgfx::setViewName(engine::rendering::kViewDepth,       "Depth Prepass");
-    bgfx::setViewName(engine::rendering::kViewOpaque,      "Opaque");
-    bgfx::setViewName(engine::rendering::kViewTransparent, "Transparent");
-    bgfx::setViewName(engine::rendering::kViewUi,          "UI 3D");
-    bgfx::setViewName(engine::rendering::kViewImGui,       "ImGui");
+    // Engine views (Shadow / Opaque / Transparent / UI 3D / ImGui) are
+    // labelled by Renderer::setupDefaultViewNames() at engine init now.
 #endif
 
     // ---- Shared cube mesh -------------------------------------------------
@@ -1253,10 +1232,8 @@ void SampleGame::onRender(Engine& engine)
         // Clear all views so no stale 3D scene or HUD bleeds through.
         RenderPass(kViewOpaque).rect(0, 0, W, H).clearColorAndDepth(kBackgroundColor);
         RenderPass(kViewTransparent).rect(0, 0, W, H).clearColorAndDepth(0x00000000);
-        bgfx::setViewRect(engine::rendering::kViewGameUi, 0, 0, W, H);
-        bgfx::setViewClear(engine::rendering::kViewGameUi,
-                           BGFX_CLEAR_COLOR, 0x00000000, 1.0f, 0);
-        bgfx::touch(engine::rendering::kViewGameUi);
+        RenderPass(engine::rendering::kViewGameUi)
+            .rect(0, 0, W, H).clearColor(0x00000000).touch();
     }
 
     // Ensure canvases exist and are sized to the current framebuffer.
@@ -1290,8 +1267,9 @@ void SampleGame::onRender(Engine& engine)
             dispatchMouseEvents(engine, *titleCanvas_);
             titleCanvas_->update();
 
-            const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
-            setupUiView(uiView, W, H, "TitleUI");
+            const engine::rendering::ViewId uiView = engine::rendering::kViewGameUi;
+            engine::rendering::RenderPass(uiView)
+                .name("TitleUI").rect(0, 0, W, H).clearNone().touch();
             uiRenderer_.render(titleCanvas_->drawList(), uiView, W, H);
         }
         return;  // skip 3D rendering
@@ -1337,10 +1315,10 @@ void SampleGame::onRender(Engine& engine)
         .transform(viewMat, projMat);
 
     // Transparent pass shares the view/proj; no clear (blends onto opaque).
-    // Explicitly reset clear flags — they persist across frames in bgfx, and
-    // the returnToTitlePending_ path sets clearColorAndDepth on this view.
-    bgfx::setViewClear(kViewTransparent, BGFX_CLEAR_NONE);
+    // Reset persistent clear flags — the returnToTitlePending_ path sets
+    // clearColorAndDepth on this view and bgfx keeps state across frames.
     RenderPass(kViewTransparent)
+        .clearNone()
         .rect(0, 0, W, H)
         .transform(viewMat, projMat);
 
@@ -1423,8 +1401,9 @@ void SampleGame::onRender(Engine& engine)
             }
         }
 
-        const bgfx::ViewId hudView = engine::rendering::kViewGameUi;
-        setupUiView(hudView, W, H, "HUD");
+        const engine::rendering::ViewId hudView = engine::rendering::kViewGameUi;
+        engine::rendering::RenderPass(hudView)
+            .name("HUD").rect(0, 0, W, H).clearNone().touch();
         uiRenderer_.render(hudDrawList_, hudView, W, H);
     }
 
@@ -1442,8 +1421,9 @@ void SampleGame::onRender(Engine& engine)
             dispatchMouseEvents(engine, *endLevelCanvas_);
             endLevelCanvas_->update();
 
-            const bgfx::ViewId uiView = engine::rendering::kViewGameUi;
-            setupUiView(uiView, W, H, "HUD");
+            const engine::rendering::ViewId uiView = engine::rendering::kViewGameUi;
+            engine::rendering::RenderPass(uiView)
+                .name("HUD").rect(0, 0, W, H).clearNone().touch();
             uiRenderer_.render(endLevelCanvas_->drawList(), uiView, W, H);
         }
     }
@@ -1822,21 +1802,17 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     if (!showPerfOverlay_ || !perfHudInitialized_)
         return;
 
-    // bgfx only populates viewStats when the profiler debug flag is set.
-    // Enable it lazily on first show; cheap when already enabled.
+    // Engine wraps bgfx::setDebug(BGFX_DEBUG_PROFILER) — viewStats are
+    // not collected until this is called.  Idempotent.
     static bool profilerEnabled = false;
     if (!profilerEnabled)
     {
-        bgfx::setDebug(BGFX_DEBUG_PROFILER);
+        engine::rendering::enableGpuProfiler(true);
         profilerEnabled = true;
     }
 
-    const bgfx::Stats* s = bgfx::getStats();
-    if (!s)
-        return;
-
     // ------------------------------------------------------------------
-    // Latch displayed values to a 4 Hz refresh.  bgfx::Stats and our
+    // Latch displayed values to a 4 Hz refresh.  Frame stats and our
     // game-CPU timings update every frame, which makes the overlay
     // unreadable.  Every 250 ms we snapshot everything; in between, we
     // render the same numbers so the eye can actually parse them.
@@ -1882,30 +1858,23 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     {
         lastSnap = nowTs;
 
-        const double cpuFreq = static_cast<double>(s->cpuTimerFreq);
-        const double gpuFreq = static_cast<double>(s->gpuTimerFreq);
-        snap.frameCpuMs = static_cast<float>((cpuFreq > 0.0)
-            ? 1000.0 * static_cast<double>(s->cpuTimeEnd - s->cpuTimeBegin) / cpuFreq : 0.0);
-        snap.frameGpuMs = static_cast<float>((gpuFreq > 0.0)
-            ? 1000.0 * static_cast<double>(s->gpuTimeEnd - s->gpuTimeBegin) / gpuFreq : 0.0);
-        snap.fps = fpsSmoothed_;
-        snap.numDraw = static_cast<unsigned>(s->numDraw);
-        snap.numPrims = static_cast<unsigned>(s->numPrims[0]);
+        const auto fs = engine::rendering::sampleFrameStats();
+        snap.frameCpuMs = fs.cpuMs;
+        snap.frameGpuMs = fs.gpuMs;
+        snap.fps        = fpsSmoothed_;
+        snap.numDraw    = fs.numDraw;
+        snap.numPrims   = fs.numPrims;
 
         snap.passCount = 0;
-        for (uint16_t i = 0; i < s->numViews && snap.passCount < 8; ++i)
+        for (const auto& p : fs.passes)
         {
-            const bgfx::ViewStats& v = s->viewStats[i];
-            if (v.name[0] == '\0')
-                continue;
-            PassSnapshot& p = snap.passes[snap.passCount++];
-            std::snprintf(p.name, sizeof(p.name), "%.*s",
-                          static_cast<int>(sizeof(p.name) - 1), v.name);
-            p.cpuMs = static_cast<float>((cpuFreq > 0.0)
-                ? 1000.0 * static_cast<double>(v.cpuTimeEnd - v.cpuTimeBegin) / cpuFreq : 0.0);
-            p.gpuMs = static_cast<float>((gpuFreq > 0.0)
-                ? 1000.0 * static_cast<double>(v.gpuTimeEnd - v.gpuTimeBegin) / gpuFreq : 0.0);
-            p.gpuValid = p.gpuMs >= 0.0f && p.gpuMs < 100.0f;
+            if (snap.passCount >= 8) break;
+            PassSnapshot& dst = snap.passes[snap.passCount++];
+            std::snprintf(dst.name, sizeof(dst.name), "%.*s",
+                          static_cast<int>(p.name.size()), p.name.data());
+            dst.cpuMs    = p.cpuMs;
+            dst.gpuMs    = p.gpuMs;
+            dst.gpuValid = p.gpuValid;
         }
 
         snap.cpuMsOnFixedUpdate  = cpuMsOnFixedUpdate_;
@@ -1915,8 +1884,8 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
         snap.cpuMsShadowSubmit   = cpuMsShadowSubmit_;
         snap.cpuMsDrawCallUpdate = cpuMsDrawCallUpdate_;
         snap.frameMs             = frameMs_;
-        snap.texMb = static_cast<unsigned>(s->textureMemoryUsed >> 20);
-        snap.rtMb  = static_cast<unsigned>(s->rtMemoryUsed >> 20);
+        snap.texMb = fs.textureMemoryMB;
+        snap.rtMb  = fs.rtMemoryMB;
 
         snap.entityCount = 0;
         if (registry_)

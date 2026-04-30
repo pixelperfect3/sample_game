@@ -11,7 +11,7 @@ This file is the **index**. Individual proposals live as separate files in `prop
 | # | Proposal | Status | Targets | Summary |
 |---|---|---|---|---|
 | 1 | [Compound & Mesh Collider Shapes](proposals/physics-shapes.md) | proposal | `engine_physics` | Allow one rigid body to represent N convex children (`StaticCompoundShape`) or a triangle soup (`MeshShape`), referenced by shape ID. Eliminates the N-entities-for-one-piece-of-geometry pattern (e.g. figure-8 floor: 128 colliders → 1). |
-| 2 | [Close the bgfx Abstraction Boundary](proposals/bgfx-abstraction.md) | proposal | `engine_rendering` | Three small additions (`RenderPass::name/clearColor/clearNone`, engine-side default view naming, new `FrameStats` API) so game code never references `bgfx::*` symbols. |
+| 2 | [Close the bgfx Abstraction Boundary](proposals/bgfx-abstraction.md) | adopted | `engine_rendering` | Three small additions (`RenderPass::name/clearColor/clearNone`, engine-side default view naming, new `FrameStats` API) so game code never references `bgfx::*` symbols. Landed in Sama (commits `ab3c9c5`, `b635de0`, `2fb051b`, `667ba75`); sample_game migrated. |
 
 ## Status values
 

@@ -149,12 +149,13 @@ private:
     // Game-side CPU timings (in ms) — bgfx::Stats only measures bgfx
     // submission cost, so we time the major game/engine sections ourselves
     // to find where actual CPU time is being spent.
-    float cpuMsOnFixedUpdate_ = 0.0f;
-    float cpuMsOnUpdate_      = 0.0f;
-    float cpuMsOnRender_      = 0.0f;
-    float cpuMsPhysics_       = 0.0f;
-    float cpuMsShadowSubmit_  = 0.0f;
+    float cpuMsOnFixedUpdate_  = 0.0f;
+    float cpuMsOnUpdate_       = 0.0f;
+    float cpuMsOnRender_       = 0.0f;
+    float cpuMsPhysics_        = 0.0f;
+    float cpuMsShadowSubmit_   = 0.0f;
     float cpuMsDrawCallUpdate_ = 0.0f;
+    float frameMs_             = 0.0f;  // wall-clock interval between onRenders
 
     void renderPerfOverlay(engine::core::Engine& engine, float dt);
 };

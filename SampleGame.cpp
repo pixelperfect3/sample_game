@@ -1215,6 +1215,22 @@ void SampleGame::resetLevel(Registry& registry)
 void SampleGame::onRender(Engine& engine)
 {
     SAMPLE_CPU_TIMER(cpuMsOnRender_);
+
+#if SAMPLE_GAME_ENABLE_PERF_OVERLAY
+    // Wall-clock frame interval — measures total time between consecutive
+    // onRender calls.  Subtracting our own measured sections gives the
+    // engine-side cost (TransformSystem, bgfx::frame, vsync wait, etc.).
+    {
+        static auto lastOnRender = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        const double ms =
+            std::chrono::duration<double, std::milli>(now - lastOnRender).count();
+        // First frame is bogus; clamp to something sane.
+        frameMs_ = (ms < 200.0) ? static_cast<float>(ms) : 0.0f;
+        lastOnRender = now;
+    }
+#endif
+
     engine.renderer().beginFrameDirect();
 
     const auto W = engine.fbWidth();
@@ -1909,6 +1925,15 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     gameRow("onRender",        cpuMsOnRender_);
     gameRow("  ShadowSubmit",  cpuMsShadowSubmit_);
     gameRow("  DrawCallUpdate",cpuMsDrawCallUpdate_);
+
+    // Wall-clock frame interval and the unaccounted-for remainder.
+    // "Other" includes engine work between callbacks (TransformSystem,
+    // input pump), bgfx::frame() command processing, AND vsync wait
+    // (which can be most of the frame on a fast device).
+    const float measured = cpuMsOnFixedUpdate_ + cpuMsOnUpdate_ + cpuMsOnRender_;
+    const float other = std::max(0.0f, frameMs_ - measured);
+    perfHud_.printf(col0, row++, kHeader, "%-18s %8.2f", "Frame total",   frameMs_);
+    perfHud_.printf(col0, row++, kRow,    "%-18s %8.2f", "  Other/vsync", other);
 
     if (registry_)
     {

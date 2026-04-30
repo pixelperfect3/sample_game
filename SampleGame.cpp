@@ -1835,12 +1835,96 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     if (!s)
         return;
 
-    const double cpuFreq = static_cast<double>(s->cpuTimerFreq);
-    const double gpuFreq = static_cast<double>(s->gpuTimerFreq);
-    const double frameCpuMs = (cpuFreq > 0.0)
-        ? 1000.0 * static_cast<double>(s->cpuTimeEnd - s->cpuTimeBegin) / cpuFreq : 0.0;
-    const double frameGpuMs = (gpuFreq > 0.0)
-        ? 1000.0 * static_cast<double>(s->gpuTimeEnd - s->gpuTimeBegin) / gpuFreq : 0.0;
+    // ------------------------------------------------------------------
+    // Latch displayed values to a 4 Hz refresh.  bgfx::Stats and our
+    // game-CPU timings update every frame, which makes the overlay
+    // unreadable.  Every 250 ms we snapshot everything; in between, we
+    // render the same numbers so the eye can actually parse them.
+    // ------------------------------------------------------------------
+    struct PassSnapshot
+    {
+        char   name[32];
+        float  cpuMs;
+        float  gpuMs;
+        bool   gpuValid;
+    };
+    struct PerfSnapshot
+    {
+        // Frame totals
+        float fps;
+        float frameCpuMs;
+        float frameGpuMs;
+        unsigned numDraw;
+        unsigned numPrims;
+        // Per-pass
+        PassSnapshot passes[8];
+        int passCount;
+        // Game CPU
+        float cpuMsOnFixedUpdate;
+        float cpuMsPhysics;
+        float cpuMsOnUpdate;
+        float cpuMsOnRender;
+        float cpuMsShadowSubmit;
+        float cpuMsDrawCallUpdate;
+        float frameMs;
+        // Resources
+        unsigned texMb;
+        unsigned rtMb;
+        size_t entityCount;
+    };
+    static PerfSnapshot snap{};
+    static auto lastSnap = std::chrono::steady_clock::now();
+    const auto nowTs = std::chrono::steady_clock::now();
+    const double sinceMs =
+        std::chrono::duration<double, std::milli>(nowTs - lastSnap).count();
+    const bool refreshNow = (sinceMs >= 250.0);
+    if (refreshNow)
+    {
+        lastSnap = nowTs;
+
+        const double cpuFreq = static_cast<double>(s->cpuTimerFreq);
+        const double gpuFreq = static_cast<double>(s->gpuTimerFreq);
+        snap.frameCpuMs = static_cast<float>((cpuFreq > 0.0)
+            ? 1000.0 * static_cast<double>(s->cpuTimeEnd - s->cpuTimeBegin) / cpuFreq : 0.0);
+        snap.frameGpuMs = static_cast<float>((gpuFreq > 0.0)
+            ? 1000.0 * static_cast<double>(s->gpuTimeEnd - s->gpuTimeBegin) / gpuFreq : 0.0);
+        snap.fps = fpsSmoothed_;
+        snap.numDraw = static_cast<unsigned>(s->numDraw);
+        snap.numPrims = static_cast<unsigned>(s->numPrims[0]);
+
+        snap.passCount = 0;
+        for (uint16_t i = 0; i < s->numViews && snap.passCount < 8; ++i)
+        {
+            const bgfx::ViewStats& v = s->viewStats[i];
+            if (v.name[0] == '\0')
+                continue;
+            PassSnapshot& p = snap.passes[snap.passCount++];
+            std::snprintf(p.name, sizeof(p.name), "%.*s",
+                          static_cast<int>(sizeof(p.name) - 1), v.name);
+            p.cpuMs = static_cast<float>((cpuFreq > 0.0)
+                ? 1000.0 * static_cast<double>(v.cpuTimeEnd - v.cpuTimeBegin) / cpuFreq : 0.0);
+            p.gpuMs = static_cast<float>((gpuFreq > 0.0)
+                ? 1000.0 * static_cast<double>(v.gpuTimeEnd - v.gpuTimeBegin) / gpuFreq : 0.0);
+            p.gpuValid = p.gpuMs >= 0.0f && p.gpuMs < 100.0f;
+        }
+
+        snap.cpuMsOnFixedUpdate  = cpuMsOnFixedUpdate_;
+        snap.cpuMsPhysics        = cpuMsPhysics_;
+        snap.cpuMsOnUpdate       = cpuMsOnUpdate_;
+        snap.cpuMsOnRender       = cpuMsOnRender_;
+        snap.cpuMsShadowSubmit   = cpuMsShadowSubmit_;
+        snap.cpuMsDrawCallUpdate = cpuMsDrawCallUpdate_;
+        snap.frameMs             = frameMs_;
+        snap.texMb = static_cast<unsigned>(s->textureMemoryUsed >> 20);
+        snap.rtMb  = static_cast<unsigned>(s->rtMemoryUsed >> 20);
+
+        snap.entityCount = 0;
+        if (registry_)
+            registry_->forEachEntity([&](EntityID) { ++snap.entityCount; });
+    }
+
+    const float frameCpuMs = snap.frameCpuMs;
+    const float frameGpuMs = snap.frameGpuMs;
 
     perfHud_.begin(engine.fbWidth(), engine.fbHeight());
 
@@ -1872,42 +1956,26 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
 
     perfHud_.printf(col0, startRow, kHeader,
                     "FPS %5.1f   CPU %5.2f ms   GPU %5.2f ms   Draws %4u   Prims %5u",
-                    fpsSmoothed_, frameCpuMs, frameGpuMs,
-                    static_cast<unsigned>(s->numDraw),
-                    static_cast<unsigned>(s->numPrims[0]));  // 0 = triangles
+                    snap.fps, frameCpuMs, frameGpuMs, snap.numDraw, snap.numPrims);
 
     perfHud_.printf(col0, startRow + 1, kHeader, "%-18s %8s %8s",
                     "Pass", "CPU(ms)", "GPU(ms)");
 
     uint16_t row = startRow + 2;
     const uint16_t maxRow = startRow + 12;  // cap engine-pass rows; game CPU follows below
-    for (uint16_t i = 0; i < s->numViews && row < maxRow; ++i)
+    for (int i = 0; i < snap.passCount && row < maxRow; ++i)
     {
-        const bgfx::ViewStats& v = s->viewStats[i];
-        // Skip unnamed views — bgfx keeps a slot for every view ID, even
-        // ones the game never touches.  An empty name means we never
-        // labelled it, so it's almost certainly a no-op.
-        if (v.name[0] == '\0')
-            continue;
-        const double passCpuMs = (cpuFreq > 0.0)
-            ? 1000.0 * static_cast<double>(v.cpuTimeEnd - v.cpuTimeBegin) / cpuFreq : 0.0;
-        const double passGpuMs = (gpuFreq > 0.0)
-            ? 1000.0 * static_cast<double>(v.gpuTimeEnd - v.gpuTimeBegin) / gpuFreq : 0.0;
-        // Filter out the bgfx GPU timer artifact that fires on views whose
-        // framebuffer is reconfigured mid-frame (begin/end timestamps come
-        // from inconsistent contexts).  Negatives or absurdly large values
-        // are not real measurements — show them as `--`.
-        const bool gpuValid = passGpuMs >= 0.0 && passGpuMs < 100.0;
-        const uint32_t color = (passGpuMs > 5.0 || passCpuMs > 5.0) ? kHot : kRow;
-        if (gpuValid)
+        const PassSnapshot& p = snap.passes[i];
+        const uint32_t color = (p.gpuMs > 5.0f || p.cpuMs > 5.0f) ? kHot : kRow;
+        if (p.gpuValid)
         {
             perfHud_.printf(col0, row++, color, "%-18s %8.2f %8.2f",
-                            v.name, passCpuMs, passGpuMs);
+                            p.name, p.cpuMs, p.gpuMs);
         }
         else
         {
             perfHud_.printf(col0, row++, color, "%-18s %8.2f %8s",
-                            v.name, passCpuMs, "--");
+                            p.name, p.cpuMs, "--");
         }
     }
 
@@ -1919,31 +1987,26 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
         const uint32_t color = (ms > 5.0f) ? kHot : kRow;
         perfHud_.printf(col0, row++, color, "%-18s %8.2f", name, ms);
     };
-    gameRow("onFixedUpdate",   cpuMsOnFixedUpdate_);
-    gameRow("  Physics",       cpuMsPhysics_);
-    gameRow("onUpdate",        cpuMsOnUpdate_);
-    gameRow("onRender",        cpuMsOnRender_);
-    gameRow("  ShadowSubmit",  cpuMsShadowSubmit_);
-    gameRow("  DrawCallUpdate",cpuMsDrawCallUpdate_);
+    gameRow("onFixedUpdate",   snap.cpuMsOnFixedUpdate);
+    gameRow("  Physics",       snap.cpuMsPhysics);
+    gameRow("onUpdate",        snap.cpuMsOnUpdate);
+    gameRow("onRender",        snap.cpuMsOnRender);
+    gameRow("  ShadowSubmit",  snap.cpuMsShadowSubmit);
+    gameRow("  DrawCallUpdate",snap.cpuMsDrawCallUpdate);
 
     // Wall-clock frame interval and the unaccounted-for remainder.
     // "Other" includes engine work between callbacks (TransformSystem,
     // input pump), bgfx::frame() command processing, AND vsync wait
     // (which can be most of the frame on a fast device).
-    const float measured = cpuMsOnFixedUpdate_ + cpuMsOnUpdate_ + cpuMsOnRender_;
-    const float other = std::max(0.0f, frameMs_ - measured);
-    perfHud_.printf(col0, row++, kHeader, "%-18s %8.2f", "Frame total",   frameMs_);
+    const float measured = snap.cpuMsOnFixedUpdate + snap.cpuMsOnUpdate
+                         + snap.cpuMsOnRender;
+    const float other = std::max(0.0f, snap.frameMs - measured);
+    perfHud_.printf(col0, row++, kHeader, "%-18s %8.2f", "Frame total",   snap.frameMs);
     perfHud_.printf(col0, row++, kRow,    "%-18s %8.2f", "  Other/vsync", other);
 
-    if (registry_)
-    {
-        size_t entityCount = 0;
-        registry_->forEachEntity([&](EntityID) { ++entityCount; });
-        perfHud_.printf(col0, row++, kRow, "Entities: %zu", entityCount);
-    }
+    perfHud_.printf(col0, row++, kRow, "Entities: %zu", snap.entityCount);
     perfHud_.printf(col0, row++, kRow, "Tex %u MB   RT %u MB",
-                    static_cast<unsigned>(s->textureMemoryUsed >> 20),
-                    static_cast<unsigned>(s->rtMemoryUsed >> 20));
+                    snap.texMb, snap.rtMb);
     perfHud_.printf(col0, row, 0x808080FF,
                     "[P] / tap top-right corner to toggle");
 

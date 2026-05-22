@@ -24,6 +24,12 @@
 #include "engine/rendering/MeshBuilder.h"
 #include "engine/rendering/RenderPass.h"
 #include "engine/rendering/ViewIds.h"
+
+// DrawCallBuildSystem still takes bgfx::ProgramHandle even though Engine
+// now exposes the bgfx-free rendering::ProgramHandle wrapper.  Sama's
+// own apps bridge with `bgfx::ProgramHandle{handle.idx}` — see Sama
+// follow-up to make DrawCallBuildSystem accept the engine type natively.
+#include <bgfx/bgfx.h>
 #include "engine/scene/SceneSerializer.h"
 #include "engine/scene/TransformSystem.h"
 #include "engine/ui/UiEvent.h"
@@ -116,6 +122,12 @@ namespace
 // Initial visibility.  Toggle at runtime: P key (desktop) or tap the
 // top-right ~120 px corner (Android).  Set false to start hidden.
 constexpr bool kPerfOverlayDefault = true;
+
+// Debug skip-to-level: set to -1 to show the title screen normally;
+// set to 0 (plank) or 1 (figure-8) to load that level directly at
+// startup, bypassing the title.  Useful for iterating on a specific
+// level without clicking "Start Game" every reload.
+constexpr int kDebugStartLevel = 1;
 
 constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;
@@ -432,6 +444,15 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
 
     // Don't load a level yet — title screen shows first.
     // loadLevel() is called when the player clicks "Start Game".
+    //
+    // Debug shortcut: kDebugStartLevel >= 0 bypasses the title and loads
+    // that level directly.  Useful for iterating on a specific level
+    // without clicking through the menu every reload.
+    if (kDebugStartLevel >= 0 && kDebugStartLevel < kLevelCount)
+    {
+        showTitleScreen_ = false;
+        loadLevel(engine, registry, kDebugStartLevel);
+    }
 }
 
 void SampleGame::applyLoadedAssets(Engine& engine, Registry& registry)
@@ -1210,7 +1231,7 @@ void SampleGame::onRender(Engine& engine)
     }
 #endif
 
-    engine.renderer().beginFrameDirect();
+    engine.renderer().beginFrame();
 
     const auto W = engine.fbWidth();
     const auto H = engine.fbHeight();
@@ -1306,7 +1327,7 @@ void SampleGame::onRender(Engine& engine)
     {
         SAMPLE_CPU_TIMER(cpuMsShadowSubmit_);
         drawCallSys_.submitShadowDrawCalls(*registry_, engine.resources(),
-                                           engine.shadowProgram(), 0);
+            bgfx::ProgramHandle{engine.shadowProgram().idx}, 0);
     }
 
     RenderPass(kViewOpaque)
@@ -1340,8 +1361,8 @@ void SampleGame::onRender(Engine& engine)
 
     {
         SAMPLE_CPU_TIMER(cpuMsDrawCallUpdate_);
-        drawCallSys_.update(*registry_, engine.resources(), engine.pbrProgram(),
-                            engine.uniforms(), frame);
+        drawCallSys_.update(*registry_, engine.resources(),
+            bgfx::ProgramHandle{engine.pbrProgram().idx}, engine.uniforms(), frame);
     }
 
     // ---- HUD --------------------------------------------------------------

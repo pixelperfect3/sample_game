@@ -123,13 +123,11 @@ constexpr bool kPerfOverlayDefault = true;
 // level without clicking "Start Game" every reload.
 constexpr int kDebugStartLevel = 1;
 
-// Audio gate — workaround for the Android SoLoud SIGSEGV race.
-// Sama 0a3d10c claimed to fix this by dropping setMaxActiveVoiceCount,
-// but the crash recurs at the IDENTICAL stack frame on Pixel 9
-// (mapResampleBuffers_internal + 120).  See bug-reports/
-// soloud-android-crash.md for the post-fix backtrace.  Keep off
-// while the real root cause is investigated upstream.
-constexpr bool kEnableAudio = false;
+// Audio gate — historic workaround for the Android SoLoud SIGSEGV race.
+// Real fix landed in sama 46b4ec1 (force OpenSL ES on Android instead of
+// the broken AAudio path that races SoLoud's mResampleData init).  Kept
+// as a kill switch in case audio regresses again.
+constexpr bool kEnableAudio = true;
 
 constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;

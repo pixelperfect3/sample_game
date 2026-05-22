@@ -129,6 +129,12 @@ constexpr bool kPerfOverlayDefault = true;
 // level without clicking "Start Game" every reload.
 constexpr int kDebugStartLevel = 1;
 
+// Workaround: latest Sama's SoLoud/miniaudio Android playback path
+// crashes with SIGSEGV in mapResampleBuffers_internal (race in the
+// AAudio callback during init).  Skip audio init while investigating.
+// Set true to restore.
+constexpr bool kEnableAudio = false;
+
 constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;
 constexpr float kTau = 6.2831853f;
@@ -342,7 +348,7 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     coinHandle_ = assets_.load<GltfAsset>("assets/models/coin.glb");
 
     // ---- Audio ------------------------------------------------------------
-    if (audio_.init())
+    if (kEnableAudio && audio_.init())
     {
         const auto bytes = readFileBytes("assets/beep.wav");
         if (!bytes.empty())

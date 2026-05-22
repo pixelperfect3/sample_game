@@ -1,8 +1,8 @@
-# Sama Engine Proposals
+# Sama Engine Proposals & Bug Reports
 
-Design proposals for changes to the [Sama engine](https://github.com/pixelperfect3/sama) that originated from `sample_game`. Each entry is a self-contained design doc — problem statement, API, implementation sketch, alternatives, migration plan — written so it can be sent upstream as a PR description, GitHub issue body, or RFC without further editing.
+Design proposals and bug reports for the [Sama engine](https://github.com/pixelperfect3/sama) that originated from `sample_game`. Each entry is a self-contained doc — written so it can be sent upstream as a PR description, GitHub issue body, or RFC without further editing.
 
-This file is the **index**. Individual proposals live as separate files in `proposals/`.
+This file is the **index**. Individual entries live as separate files in `proposals/` and `bug-reports/`.
 
 ---
 
@@ -12,6 +12,12 @@ This file is the **index**. Individual proposals live as separate files in `prop
 |---|---|---|---|---|
 | 1 | [Compound & Mesh Collider Shapes](proposals/physics-shapes.md) | proposal | `engine_physics` | Allow one rigid body to represent N convex children (`StaticCompoundShape`) or a triangle soup (`MeshShape`), referenced by shape ID. Eliminates the N-entities-for-one-piece-of-geometry pattern (e.g. figure-8 floor: 128 colliders → 1). |
 | 2 | [Close the bgfx Abstraction Boundary](proposals/bgfx-abstraction.md) | adopted | `engine_rendering` | Three small additions (`RenderPass::name/clearColor/clearNone`, engine-side default view naming, new `FrameStats` API) so game code never references `bgfx::*` symbols. Landed in Sama (commits `ab3c9c5`, `b635de0`, `2fb051b`, `667ba75`); sample_game migrated. |
+
+## Open bug reports
+
+| # | Bug | Severity | Component | Summary |
+|---|---|---|---|---|
+| B1 | [SoLoud SIGSEGV on Android AAudio callback during init](bug-reports/soloud-android-crash.md) | crash on launch | `engine_audio` (SoLoud + miniaudio) | Race during `SoLoudAudioEngine::init` on Pixel 9 / Android 16 — AAudio callback thread fires before SoLoud's mix state is allocated, dereferences null in `mapResampleBuffers_internal`. Workaround: `kEnableAudio = false` in `sample_game`. First seen sama `9b4f123`; worked on `1bfe1ab`. |
 
 ## Status values
 
@@ -33,9 +39,25 @@ This file is the **index**. Individual proposals live as separate files in `prop
    **Targets:** <engine_subsystem(s)>
    ```
 3. Cover, in order: Problem · Goals · Non-goals · Background · Proposal · API/ABI compatibility · Migration plan · Alternatives considered · Open questions · Estimated effort.
-4. Add a row to the table above with the proposal number, link, status, target, and a one-sentence summary.
+4. Add a row to the **Active proposals** table above with the proposal number, link, status, target, and a one-sentence summary.
 
 The point is that each proposal stands alone — a Sama maintainer should be able to read just the linked file (without scrolling to other proposals) and have everything they need to evaluate it.
+
+## How to add a new bug report
+
+1. Create `bug-reports/<short-kebab-name>.md`.
+2. Use this front-matter block:
+   ```markdown
+   # <Symptom>: <one-line title>
+
+   **Severity:** <crash on launch | crash mid-game | wrong behaviour | perf regression>
+   **Component:** <engine_subsystem>
+   **Status:** open
+   **First seen:** sama `<commit>`  (last known good: `<commit>`)
+   **Reporter:** sample_game integration
+   ```
+3. Cover, in order: TL;DR · Environment · Repro · Logs · Backtrace · Suspected cause · What we ruled out · Suggested investigation direction · Workaround in `sample_game` · Acceptance test.
+4. Add a row to the **Open bug reports** table above with severity, component, and a one-sentence summary.
 
 ## Why this lives here, not in Sama
 

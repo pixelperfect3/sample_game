@@ -24,12 +24,6 @@
 #include "engine/rendering/MeshBuilder.h"
 #include "engine/rendering/RenderPass.h"
 #include "engine/rendering/ViewIds.h"
-
-// DrawCallBuildSystem still takes bgfx::ProgramHandle even though Engine
-// now exposes the bgfx-free rendering::ProgramHandle wrapper.  Sama's
-// own apps bridge with `bgfx::ProgramHandle{handle.idx}` — see Sama
-// follow-up to make DrawCallBuildSystem accept the engine type natively.
-#include <bgfx/bgfx.h>
 #include "engine/scene/SceneSerializer.h"
 #include "engine/scene/TransformSystem.h"
 #include "engine/ui/UiEvent.h"
@@ -129,11 +123,10 @@ constexpr bool kPerfOverlayDefault = true;
 // level without clicking "Start Game" every reload.
 constexpr int kDebugStartLevel = 1;
 
-// Workaround: latest Sama's SoLoud/miniaudio Android playback path
-// crashes with SIGSEGV in mapResampleBuffers_internal (race in the
-// AAudio callback during init).  Skip audio init while investigating.
-// Set true to restore.
-constexpr bool kEnableAudio = false;
+// Audio gate — was a workaround for the Android SoLoud SIGSEGV race;
+// fixed upstream in sama 0a3d10c (drop setMaxActiveVoiceCount post-init).
+// Kept as a kill switch in case the audio path regresses again.
+constexpr bool kEnableAudio = true;
 
 constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;
@@ -1333,7 +1326,7 @@ void SampleGame::onRender(Engine& engine)
     {
         SAMPLE_CPU_TIMER(cpuMsShadowSubmit_);
         drawCallSys_.submitShadowDrawCalls(*registry_, engine.resources(),
-            bgfx::ProgramHandle{engine.shadowProgram().idx}, 0);
+                                           engine.shadowProgram(), 0);
     }
 
     RenderPass(kViewOpaque)
@@ -1368,7 +1361,7 @@ void SampleGame::onRender(Engine& engine)
     {
         SAMPLE_CPU_TIMER(cpuMsDrawCallUpdate_);
         drawCallSys_.update(*registry_, engine.resources(),
-            bgfx::ProgramHandle{engine.pbrProgram().idx}, engine.uniforms(), frame);
+                            engine.pbrProgram(), engine.uniforms(), frame);
     }
 
     // ---- HUD --------------------------------------------------------------

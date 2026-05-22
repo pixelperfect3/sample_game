@@ -2,8 +2,9 @@
 
 **Severity:** crash on launch (Android, any game using `engine_audio`)
 **Component:** `engine_audio` (SoLoud + miniaudio AAudio backend)
-**Status:** open
+**Status:** **open — first fix attempt did not resolve**
 **First seen:** sama `9b4f123` (2026-05-22); previous working commit on this device: `1bfe1ab`
+**Fix attempted:** sama `0a3d10c` (drop `setMaxActiveVoiceCount` post-init) — **crash still reproduces at identical stack frame** on Pixel 9 / Android 16
 **Reporter:** `sample_game` integration
 
 ---
@@ -81,7 +82,54 @@ The crashing thread is named `AudioTrack` (AAudio's playback callback), not the 
 #12 pc 0x00000000000badcc  libaudioclient.so               android::AudioTrack::processAudioBuffer()+2716
 ```
 
-## Suspected cause
+## Update — fix attempt `0a3d10c` did not resolve
+
+`0a3d10c` dropped the `setMaxActiveVoiceCount` call from `SoLoudAudioEngine::init`. The comment in the new code clearly identifies the suspected race (the `delete[] mResampleData; mResampleData = new ...` in `soloud_core_setters.cpp`). With that call removed, the wrapper now just runs:
+
+```cpp
+soloud_.init(CLIP_ROUNDOFF, MINIAUDIO, AUTO, AUTO, 2);
+// (no setMaxActiveVoiceCount)
+for (size_t i = 0; i < kCategoryCount; ++i)
+    busHandles_[i] = soloud_.play(buses_[i]);   // 4 category buses
+initialized_ = true;
+```
+
+Rebuilt `sample_game` against sama `0a3d10c` + this `SoLoudAudioEngine.cpp`. **Crash still reproduces 100 % on Pixel 9.** Backtrace from the post-fix run:
+
+```
+signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 (read)
+Cause: null pointer dereference
+
+#00 SoLoud::Soloud::mapResampleBuffers_internal()+120     ← identical offset
+#01 SoLoud::Soloud::mix_internal(unsigned int)+516
+#02 SoLoud::Soloud::mix(float*, unsigned int)+32
+#03 ma_device__on_data(ma_device*, ...)+600
+#04 ma_device__handle_data_callback(...)+336
+#05 ma_device__read_frames_from_client(...)+492
+#06 ma_device_handle_backend_data_callback+644
+#07 ma_stream_data_callback_playback__aaudio(...)+28
+#08-12 AAudio playback callback thread (libaaudio_internal_mmap.so)
+```
+
+The fault address (`0x0`), function (`mapResampleBuffers_internal`), and offset (`+120`) are **identical** to the pre-fix crash. Conclusion: the realloc in `setMaxActiveVoiceCount` was **not the source** of the null deref — only one possible source of it.
+
+**Revised hypothesis:** the race is inside `Soloud::init()` itself, not in anything Sama wraps. `Soloud::init` does (in this order):
+
+1. Initialise the miniaudio device (which starts the AAudio callback thread on Android — the device is `MA_DEVICE_STATE_STARTED` here).
+2. Call `Soloud::postinit_internal(samplerate, buffersize, flags, channels)`, which is what actually allocates `mResampleData[]` and the related arrays.
+
+Between (1) and (2) — possibly only a few microseconds, but enough on Android 14+ aggressive AAudio scheduling — the callback fires, calls `Soloud::mix → mix_internal → mapResampleBuffers_internal`, dereferences the still-null `mResampleData[i]`, and SIGSEGVs.
+
+A second hypothesis worth ruling out: the four `bus.play()` calls *after* init still write to the voice array while the callback is mixing. The Sama comment dismisses this as not touching `mResampleData`, but `mix_internal` accesses both voice state and resample buffers; if `bus.play()` somehow makes the mixer attempt to map a buffer it hadn't needed before, that could explain the timing dependency. Easy test: comment out the 4-bus loop and see if the crash disappears.
+
+## Suggested next investigation steps
+
+1. **Test inside SoLoud's own init**: confirm `mResampleData` is null between miniaudio device start and `postinit_internal`. Trivial to verify with one `printf` in SoLoud's source.
+2. **Reorder inside SoLoud (the real fix)**: a SoLoud patch that defers starting the miniaudio device until after `postinit_internal` returns. miniaudio's `ma_device_init` already supports stopping at "initialized but not started" via `MA_DEVICE_NOTIFICATION_TYPE_STOPPED` config; SoLoud is currently using the convenience path that starts immediately.
+3. **Workaround in Sama** while the SoLoud fix is upstream: post-init, `usleep(50ms)` would empirically confirm. Or use SoLoud's `setPause(true)` → `setPause(false)` dance if it routes through miniaudio cleanly.
+4. **Take the 4-bus loop out** as a fast bisection step. If it shifts the timing enough to mask the crash on Pixel 9, that doesn't mean it caused the race, but it narrows the window.
+
+## Original suspected cause
 
 A race during `SoLoudAudioEngine::init()`:
 

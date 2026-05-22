@@ -17,7 +17,7 @@ This file is the **index**. Individual entries live as separate files in `propos
 
 | # | Bug | Severity | Component | Summary |
 |---|---|---|---|---|
-| B1 | [SoLoud SIGSEGV on Android AAudio callback during init](bug-reports/soloud-android-crash.md) | crash on launch | `engine_audio` (SoLoud + miniaudio) | Race during `SoLoudAudioEngine::init` on Pixel 9 / Android 16 — AAudio callback thread fires before SoLoud's mix state is allocated, dereferences null in `mapResampleBuffers_internal`. Workaround: `kEnableAudio = false` in `sample_game`. First seen sama `9b4f123`; worked on `1bfe1ab`. |
+| B1 | [SoLoud SIGSEGV on Android AAudio callback during init](bug-reports/soloud-android-crash.md) | crash on launch | `engine_audio` (SoLoud + miniaudio) | Race during `SoLoudAudioEngine::init` on Pixel 9 / Android 16 — AAudio callback thread fires before SoLoud's mix state is allocated, dereferences null in `mapResampleBuffers_internal`. **Fix attempt `0a3d10c` did not resolve** — crash still reproduces at identical stack frame. Race is inside `Soloud::init()` between miniaudio-device-start and `postinit_internal`, not in anything Sama wraps. Workaround: `kEnableAudio = false` in `sample_game`. |
 | B2 | [~20 ms/frame of unaccounted CPU on Android](bug-reports/android-cpu-time-regression.md) | perf (40 FPS vs expected 60) | `engine_core` / `engine_rendering` (between IGame callbacks) | Game-side CPU = 0.7 ms, bgfx submit = 0.34 ms, GPU = 3.61 ms — but wall-clock frame = 21.2 ms. The missing ~20 ms is engine work between callbacks. Need a per-system CPU breakdown inside the frame loop to isolate. Regressed at `9b4f123` (Phase 7 post-process landed in this range); was 60 FPS on `1bfe1ab`. |
 
 ## Status values

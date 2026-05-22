@@ -1233,6 +1233,28 @@ void SampleGame::onRender(Engine& engine)
     }
 #endif
 
+#ifdef __ANDROID__
+    // Log Sama's per-phase frame breakdown every ~60 frames (~1× per
+    // second at 60 FPS).  frameStats() returns the PREVIOUS frame's
+    // numbers (populated at end of last Engine::endFrame); that's fine
+    // for a periodic perf log.  Routed via __android_log_print so the
+    // engine team can grep logcat with `adb logcat -s SampleGame:I`.
+    {
+        static int frameLogCounter = 0;
+        if (++frameLogCounter >= 60)
+        {
+            frameLogCounter = 0;
+            const auto& fs = engine.frameStats();
+            __android_log_print(ANDROID_LOG_INFO, "SampleGame",
+                "frame: full=%.2f begin=%.2f end=%.2f"
+                " (post=%.2f bgfx=%.2f) gameWork=%.2f",
+                fs.fullFrameMs, fs.beginFrameMs, fs.endFrameMs,
+                fs.postProcessSubmitMs, fs.bgfxFrameMs,
+                fs.fullFrameMs - fs.beginFrameMs - fs.endFrameMs);
+        }
+    }
+#endif
+
     engine.renderer().beginFrame();
 
     const auto W = engine.fbWidth();

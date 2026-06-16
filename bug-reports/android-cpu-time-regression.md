@@ -1,9 +1,10 @@
 # Perf regression: ~20 ms/frame of unaccounted CPU on Android (Pixel 9), level-2 scene
 
 **Severity:** perf regression (40 FPS where we expect 60)
-**Component:** `engine_rendering` — bgfx single-threaded mode (confirmed via `engine.frameStats()` instrumentation in `e43ceb0`)
-**Status:** root cause identified — waiting on bgfx multi-threaded-mode flip
+**Component:** `engine_rendering` — bgfx multi-threaded mode not delivering the predicted win
+**Status:** **fix attempted (`0824768`), did not resolve** — `bgfxFrameMs` still ~15+ ms vs predicted ~0.1 ms; need engine-side diagnosis
 **First seen:** sama `9b4f123` (2026-05-22) — running on `sample_game` figure-8 level
+**Fix attempted:** sama `a2608ec` (and the supporting `0824768` "default bgfx to multi-threaded mode") on **2026-06-16**
 **Last known good cadence:** sama `1bfe1ab` (same device, same scene, sustained 60 FPS)
 **Reporter:** `sample_game` integration
 
@@ -107,3 +108,47 @@ frame: full=28.32 begin=0.13 end=27.33 (post=0.01 bgfx=27.30) gameWork=0.85
 **Verdict matches the engine team's row-1 prediction** ("`bgfxFrameMs` ~12–15 ms dominant → bgfx single-threaded mode charging GPU+vsync to the game thread"). The magnitude is actually higher than predicted (15–36 ms), but the shape is identical.
 
 The bgfx multi-threaded-mode flip (`EngineDesc::singleThreaded = false`, mentioned in `docs/ANDROID_SUPPORT.md`) is the right next fix. Hypotheses #1 (post-process) and #2 (LightClusterBuilder cache miss) are off the table.
+
+---
+
+## Update — multi-threaded flip landed (`a2608ec`), still 45-50 FPS on Pixel 9
+
+After pulling sama `a2608ec` and explicitly setting `EngineDesc::singleThreaded = false` from our `main_android.cpp` (which now defines its own `android_main` to override `engine_android`'s default `runner.runAndroid(app)` that wouldn't have set the flag), and confirming `BGFX_CONFIG_MULTITHREADED=1` is in the compiled bgfx flags — the perf overlay still shows:
+
+- **`bgfx::frame` row: ~15+ ms** (vs the engine team's predicted ~0.1 ms in `docs/NOTES.md` "bgfx threading mode — multi-threaded default", line 304: *"expected delta is ~20 ms → ~0.1 ms on the game thread"*)
+- **FPS: 45–50** sustained (was 40)
+
+So the flip did *something* — but the dominant cost didn't move where the docs say it should.
+
+### What's verified on our side
+
+- `EngineDesc::singleThreaded` is `false` in our `main_android.cpp` (commit `5b267e7` — our custom `android_main` builds the desc explicitly).
+- That value flows through `Engine::initAndroid` → `RendererDesc::singleThreaded = desc.singleThreaded` → `Renderer::init`, where the `if (!desc.headless && desc.singleThreaded) bgfx::renderFrame();` guard correctly **does not** call `bgfx::renderFrame()` before `bgfx::init`.
+- bgfx was compiled with `BGFX_CONFIG_MULTITHREADED=1` (`flags.make` in `build/android/arm64-v8a/_deps/bgfx_cmake-build/cmake/bgfx/CMakeFiles/bgfx.dir/`).
+- bgfx Android Vulkan path otherwise initialises cleanly (logs `bgfx::init type=9` and renders the figure-8 scene normally).
+
+### Two hypotheses worth checking on the engine side
+
+1. **Multi-threaded mode isn't actually engaging at runtime despite the compile flag and our `false`.** Maybe bgfx's Android Vulkan backend silently falls back to single-threaded for some reason (older bgfx releases had Android-specific overrides). A `bgfx::getCaps()` or the bgfx debug-text overlay would say which mode it's running in. Worth verifying on a Pixel 9 run that matches what was measured for the "expected ~0.1 ms" claim.
+2. **Multi-threaded IS engaged, but vsync-locked swapchain (`BGFX_RESET_VSYNC`) keeps the ring queue at depth 1 with a render-thread that's the same cost as a vsync period, so the game thread blocks waiting for queue space.** This is consistent with our number (`bgfx::frame ≈ vsync period − tiny`), and it would mean the docs' "~0.1 ms" measurement was taken with vsync OFF, not the user-shipping configuration.
+
+### What sample_game saw, in the new overlay (Pixel 9, figure-8 level, idle ball)
+
+User report: `bgfx::frame` row showing **15+ ms**; FPS reading 45–50.  Other engine rows expected to be small (`eng begin ≈ 0`, `PostProcess ≈ 0`, `eng end ≈ bgfx::frame + small remainder`), but those numbers haven't been captured in this report yet — happy to update with the full overlay grid if useful.
+
+### What would close this
+
+Either:
+
+- Confirm hypothesis (1) and fix bgfx so multi-threaded engages on Android Vulkan, OR
+- Confirm hypothesis (2) and either (a) update `docs/NOTES.md` to clarify that the ~0.1 ms number is vsync-off, or (b) document a recommended swapchain depth / pacing strategy for shipping games that lets multi-threaded mode actually win when vsync is on.
+
+`apps/perf_smoke/run_both.sh` mentioned in the docs entry would give a clean A/B if anyone can run it on a Pixel 9 with vsync on.
+
+### Sample_game current configuration (for reproducibility)
+
+- sama HEAD: `a2608ec` plus our local `__APPLE__` guards on 5 `<TargetConditionals.h>` files (longstanding unrelated bug).
+- `EngineDesc{ singleThreaded = false, enableGyro = true }` set in our `main_android.cpp` `android_main`.
+- `kEnableAudio = false` due to B1 regression in the perf series (separate report).
+- `kDebugStartLevel = 1` → boots straight into figure-8.
+- Repro: `./android/build_apk.sh --install` and read the new `bgfx::frame` row of the perf overlay (top-right corner of the screen, tap to toggle).

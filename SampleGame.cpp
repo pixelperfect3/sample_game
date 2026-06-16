@@ -123,11 +123,14 @@ constexpr bool kPerfOverlayDefault = true;
 // level without clicking "Start Game" every reload.
 constexpr int kDebugStartLevel = 1;
 
-// Audio gate — historic workaround for the Android SoLoud SIGSEGV race.
-// Real fix landed in sama 46b4ec1 (force OpenSL ES on Android instead of
-// the broken AAudio path that races SoLoud's mResampleData init).  Kept
-// as a kill switch in case audio regresses again.
-constexpr bool kEnableAudio = true;
+// Audio gate.  B1 fix (atomic gate in soloud_miniaudio.cpp) landed in
+// sama 0e9bf2e — verified working.  Then REGRESSED in the perf-audit
+// series ending sama a2608ec — same identical crash signature
+// (mapResampleBuffers_internal +120 → mix_internal +516 → mix → AAudio
+// callback) reproduces on Pixel 9 / Android 16.  See bug-reports/
+// soloud-android-crash.md "Update — regression in a2608ec" section.
+// Disabled here so the perf + gyro verification can proceed.
+constexpr bool kEnableAudio = false;
 
 constexpr uint32_t kBackgroundColor = 0x1A1A2EFF;
 constexpr float kBallRadius = 0.55f;

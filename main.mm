@@ -21,9 +21,11 @@ int main()
 
     SampleGame game;
     engine::game::GameRunner runner(game);
-    return runner.run(engine::core::EngineDesc{
-        .windowWidth = 1920,
-        .windowHeight = 1080,
-        .windowTitle = "My Game"
-    });
+    engine::core::EngineDesc desc;
+    desc.windowWidth = 1920;
+    desc.windowHeight = 1080;
+    desc.windowTitle = "My Game";
+    desc.enableGyro = true;        // for cross-platform parity with Android
+    desc.singleThreaded = false;   // multi-threaded bgfx (Sama default)
+    return runner.run(desc);
 }

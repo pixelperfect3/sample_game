@@ -152,3 +152,44 @@ Either:
 - `kEnableAudio = false` due to B1 regression in the perf series (separate report).
 - `kDebugStartLevel = 1` → boots straight into figure-8.
 - Repro: `./android/build_apk.sh --install` and read the new `bgfx::frame` row of the perf overlay (top-right corner of the screen, tap to toggle).
+
+---
+
+## Update — VSYNC-off diagnostic: **hypothesis 1 confirmed**, hypothesis 2 ruled out
+
+Per the engine team's suggestion, locally patched `engine/rendering/Renderer.cpp` to clear `BGFX_RESET_VSYNC` from `init.resolution.reset`, rebuilt, ran the figure-8 level for ~10 seconds on Pixel 9.
+
+Seven consecutive samples with **vsync OFF**:
+
+```
+frame: full=21.32 begin=0.17 end=20.31 (post=0.00 bgfx=20.28) gameWork=0.84
+frame: full=21.18 begin=0.12 end=19.30 (post=0.01 bgfx=19.26) gameWork=1.76
+frame: full=24.35 begin=0.26 end=19.72 (post=0.01 bgfx=19.67) gameWork=4.36
+frame: full=17.21 begin=0.21 end=15.71 (post=0.00 bgfx=15.68) gameWork=1.30
+frame: full=28.21 begin=0.09 end=23.68 (post=0.01 bgfx=23.62) gameWork=4.44
+frame: full=19.26 begin=0.09 end=18.89 (post=0.00 bgfx=18.88) gameWork=0.28
+frame: full=20.72 begin=0.59 end=18.45 (post=0.00 bgfx=18.42) gameWork=1.68
+```
+
+`bgfxFrameMs` is **15.7–23.6 ms** — essentially unchanged from the vsync-on numbers. The variance even widened slightly (no vsync cap holding the upper bound).
+
+**If multi-threaded mode were actually engaged, this is where it would have shown.** A real async hand-off should have returned in ~0.1 ms once the swapchain queue stalling went away.  It did not. The render thread isn't doing the work in the background — `bgfx::frame()` is performing the full submit + GPU wait synchronously on the game thread regardless of `BGFX_RESET_VSYNC`.
+
+### Verdict
+
+**Hypothesis 1 confirmed**: bgfx is silently in single-threaded mode at runtime on Pixel 9 / Android Vulkan, despite:
+
+- `EngineDesc::singleThreaded = false` (verified via our `main_android.cpp`)
+- `BGFX_CONFIG_MULTITHREADED=1` in the compiled bgfx flags
+- `Renderer::init` correctly skipping the pre-init `bgfx::renderFrame()` call
+- bgfx Android Vulkan otherwise initialising cleanly
+
+**Hypothesis 2 ruled out**: vsync-locked queue stall isn't the cause — the numbers don't move when vsync is removed.
+
+### Things worth checking on the engine side
+
+1. **bgfx Android Vulkan render-thread spawn path** — confirm `bgfx::s_ctx->m_renderThread` is actually being created on this device. A `BX_TRACE` at `bgfx.cpp::ContextImpl::run` (the render thread entry) would settle it in seconds; if that trace never fires in the logcat on Pixel 9, we're in single-threaded mode silently.
+2. **Whether bgfx's Vulkan backend on Android has a runtime override that forces single-threaded.** Older bgfx versions did exactly this for OpenGL ES; the Vulkan path may inherit the same logic. Worth a `git log` in the bgfx submodule for any Android-specific gating of `BGFX_CONFIG_MULTITHREADED`.
+3. **What `apps/perf_smoke/run_both.sh` actually measures on a Pixel 9.** The "expected ~0.1 ms" in `docs/NOTES.md` line 304 came from somewhere — if perf_smoke gets the predicted number on the engine team's device but we don't on ours, there's a device or platform-config difference. If it gets the same ~15+ ms on their Pixel 9 too, the docs entry needs revising.
+
+Patch was reverted locally before this report was written — sama-src is back at clean upstream HEAD.

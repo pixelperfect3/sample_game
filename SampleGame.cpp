@@ -1889,6 +1889,12 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
         float cpuMsShadowSubmit;
         float cpuMsDrawCallUpdate;
         float frameMs;
+        // Engine per-phase (Engine::frameStats — populated by sama e43ceb0)
+        float engineFullFrameMs;
+        float engineBeginFrameMs;
+        float engineEndFrameMs;
+        float enginePostProcessMs;
+        float engineBgfxFrameMs;
         // Resources
         unsigned texMb;
         unsigned rtMb;
@@ -1930,6 +1936,15 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
         snap.cpuMsShadowSubmit   = cpuMsShadowSubmit_;
         snap.cpuMsDrawCallUpdate = cpuMsDrawCallUpdate_;
         snap.frameMs             = frameMs_;
+        // Engine::frameStats reports the previous frame's per-phase wall-clock.
+        {
+            const auto& es = engine.frameStats();
+            snap.engineFullFrameMs    = es.fullFrameMs;
+            snap.engineBeginFrameMs   = es.beginFrameMs;
+            snap.engineEndFrameMs     = es.endFrameMs;
+            snap.enginePostProcessMs  = es.postProcessSubmitMs;
+            snap.engineBgfxFrameMs    = es.bgfxFrameMs;
+        }
         snap.texMb = fs.textureMemoryMB;
         snap.rtMb  = fs.rtMemoryMB;
 
@@ -2008,6 +2023,20 @@ void SampleGame::renderPerfOverlay(Engine& engine, float /*dt*/)
     gameRow("onRender",        snap.cpuMsOnRender);
     gameRow("  ShadowSubmit",  snap.cpuMsShadowSubmit);
     gameRow("  DrawCallUpdate",snap.cpuMsDrawCallUpdate);
+
+    // Engine per-phase breakdown (Engine::frameStats — previous frame's).
+    // Hot if any single phase blows past 5 ms.
+    perfHud_.printf(col0, row++, kHeader, "%-18s %8s",
+                    "Engine phases", "ms");
+    auto engineRow = [&](const char* name, float ms) {
+        const uint32_t color = (ms > 5.0f) ? kHot : kRow;
+        perfHud_.printf(col0, row++, color, "%-18s %8.2f", name, ms);
+    };
+    engineRow("eng full",          snap.engineFullFrameMs);
+    engineRow("  eng begin",       snap.engineBeginFrameMs);
+    engineRow("  eng end",         snap.engineEndFrameMs);
+    engineRow("    PostProcess",   snap.enginePostProcessMs);
+    engineRow("    bgfx::frame",   snap.engineBgfxFrameMs);
 
     // Wall-clock frame interval and the unaccounted-for remainder.
     // "Other" includes engine work between callbacks (TransformSystem,

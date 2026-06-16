@@ -372,6 +372,24 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
     }
     uiRenderer_.init();
 
+    // ---- B2 diagnostic: strip GPU work ----------------------------------
+    // Halve internal resolution + kill every optional post-process pass +
+    // disable IBL.  If bgfx::frame still doesn't move, we have conclusive
+    // evidence that the cost is bgfx single-threaded mode runtime fallback,
+    // not GPU work hidden behind the queue.  Revert when B2 is closed.
+    {
+        auto rs = engine.renderer().renderSettings();
+        rs.shadows.directionalRes  = 512;
+        rs.shadows.filter          = engine::rendering::ShadowFilter::Hard;
+        rs.renderScale             = 0.5f;
+        rs.depthPrepassEnabled       = false;
+        rs.lighting.iblEnabled       = false;
+        rs.postProcess.fxaaEnabled   = false;
+        rs.postProcess.bloom.enabled = false;
+        rs.postProcess.ssao.enabled  = false;
+        engine.renderer().setRenderSettings(rs);
+    }
+
 #if SAMPLE_GAME_ENABLE_PERF_OVERLAY
     perfHud_.init();
     perfHudInitialized_ = true;

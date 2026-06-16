@@ -27,6 +27,11 @@ extern "C" void android_main(struct android_app* app)
     // the fields below are placeholders that initAndroid overrides.
     desc.enableGyro = true;       // game uses tilt control on Android
     desc.singleThreaded = false;  // multi-threaded bgfx (Sama default)
+    // B2 diagnostic: cut shadow atlas to 512² to strip the biggest GPU
+    // cost on TBDR.  Combined with the RenderSettings overrides in
+    // SampleGame::onInit, this measures whether bgfx::frame moves at
+    // all when GPU work collapses.  Revert when B2 is closed.
+    desc.shadowResolution = 512;
 
     runner.runAndroid(app, desc);
 }

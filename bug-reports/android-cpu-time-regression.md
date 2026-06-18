@@ -2,7 +2,7 @@
 
 **Severity:** perf regression (40 FPS where we expect 60)
 **Component:** `engine_rendering` — bgfx multi-threaded mode not delivering the predicted win
-**Status:** **fix attempted (`0824768`), did not resolve** — `bgfxFrameMs` still ~15+ ms vs predicted ~0.1 ms; need engine-side diagnosis
+**Status:** **resolved** in sama `5bb76a4` (clamped-resolution patch) + `67ca197` (SUBOPTIMAL-as-success patch) + `089fe5b` (MAILBOX reorder). Verified on Pixel 9 / Android 16: `bgfx::frameMs` 0.27–6.27 ms (was ~15 ms), present 0.1–2 ms (was ~14 ms), swapchain recreations 0/s (was ~60/s). Frame counter 14520→17880 in 10 s ≈ 336 FPS uncapped, panel switched into 120 Hz mode.
 **First seen:** sama `9b4f123` (2026-05-22) — running on `sample_game` figure-8 level
 **Fix attempted:** sama `a2608ec` (and the supporting `0824768` "default bgfx to multi-threaded mode") on **2026-06-16**
 **Last known good cadence:** sama `1bfe1ab` (same device, same scene, sustained 60 FPS)
@@ -539,3 +539,48 @@ Path (1) is the upstream-worthy bgfx fix; path (2) is a one-frame workaround in 
 ### Side note
 
 `gfxinfo` now shows **5 GraphicBufferAllocator entries at 1080×2424 (portrait)** — different from the earlier 4 buffers at 2251×1080. Looks like with this run the activity ended up in portrait initially (lock-screen interaction). When it later rotates to the landscape we want, the resolution-mismatch loop kicks in.
+
+---
+
+## Update — fix landed and verified on Pixel 9 (2026-06-18)
+
+All three patches now live in sama upstream:
+
+- `089fe5b` `fix(rendering): prefer MAILBOX over FIFO in bgfx Vulkan present mode`
+- `67ca197` `fix(rendering): treat VK_SUBOPTIMAL_KHR as success` — closes the per-frame `vkDestroySwapchainKHR + vkCreateSwapchainKHR + vkDeviceWaitIdle` loop
+- `5bb76a4` `fix(rendering): track requested vs clamped resolution separately` — closes the second recreate trigger from the `_resolution.width != m_resolution.width` comparison after the driver clamps `2424 → 2251`
+
+The patches live in `sama/patches/bgfx_android_*.patch` and are wired into the bgfx_cmake FetchContent `PATCH_COMMAND`. Important caveat: **`PATCH_COMMAND` only fires on first extraction** — an existing `_deps/bgfx_cmake-src/` from before the patches existed is never re-patched on a `git pull`. The `sample_game` integration has a separate Android-side `build/android/arm64-v8a/_deps/bgfx_cmake-src/` tree from April; applying the patches there manually (and rebuilding `bgfx.dir`) was required.
+
+### Measured impact
+
+Same Pixel 9, same figure-8 level, same APK pipeline:
+
+```
+Before (sama 9b4f123, unpatched bgfx):
+  bgfx::frameMs = 15-17 ms (mean ~16)
+  vkQueuePresentKHR = ~14 ms
+  Create swapchain = ~60/s
+  FPS = 45-50
+
+After (sama 5bb76a4, all three patches applied):
+  bgfx::frameMs = 0.27-6.27 ms (mean ~2-3)
+  vkQueuePresentKHR = 0.1-2 ms (per-call timing log)
+  vkAcquireNextImageKHR = 0.02-0.06 ms
+  vkQueueSubmit = 0.04-0.12 ms
+  vkWaitForFences = 0.000 ms
+  Create swapchain = 0 (after init)
+  gpu = 1-3 ms, cpu = 0.3-1.0 ms
+  FPS ≈ 336 uncapped (panel switched into 120 Hz mode)
+```
+
+Frame counter advanced 14520 → 17880 in 10 s of wall clock = 336 fps. The cost was exactly what the SUBOPTIMAL theory predicted: `vkDeviceWaitIdle + vkDestroySwapchainKHR + vkCreateSwapchainKHR` per frame, ~15 ms on Pixel 9's Mali-G715. With both recreate triggers closed, the per-call cost of each Vulkan call falls into the sub-ms range and bgfx::frame just runs the actual submit + present.
+
+### Acceptance test (passed)
+
+1. ✅ Capture `Sama vk per-call ms` lines from the patched build — `present` < 5 ms.
+2. ✅ Count `Create swapchain` lines in a 10-second logcat sample — 0.
+3. ✅ Read `SamaEngineBgfxStats` `bgfx::frameMs` — mean < 5 ms.
+4. ✅ Panel locks into 120 Hz mode (visible in `SurfaceFlinger setDesiredMode` line).
+
+B2 is closed. Recommend turning `BX_CONFIG_DEBUG=OFF` again now that the BX_TRACE capture is no longer needed — the per-frame trace volume from the call-timing patch adds overhead.

@@ -479,3 +479,63 @@ This is a known Android Vulkan integration issue with display cutouts — the su
 - `BGFX_RESET_VSYNC` is still requested. MAILBOX-vs-FIFO is moot until the swapchain stops being recreated.
 
 **Recommend reverting BX_CONFIG_DEBUG=OFF after the team has captured the trace** they want — the per-frame trace volume is high (~3 lines × 60+ fps) and the macro framework adds measurable overhead.
+
+---
+
+## Update — SUBOPTIMAL patch applied; second recreation trigger surfaced
+
+Pulled sama `67ca197` (treat VK_SUBOPTIMAL_KHR as success); the patches/ tree doesn't auto-apply on incremental FetchContent rebuilds, so I applied `bgfx_android_vk_suboptimal_no_recreate.patch` manually to our existing bgfx checkout in both call sites (acquire at line 8229, present at line 8318). Forced a bgfx-target rebuild (cmake didn't notice the source change on its own — the cached .o was stale; had to `rm` the .o and re-`cmake --build`). Verified `Sama: SUBOPTIMAL` comments are present in the rebuilt `renderer_vk.cpp.o`.
+
+Symptom partly improved (`vkQueuePresentKHR result = VK_SUBOPTIMAL_KHR` trace lines are gone) but `Create swapchain numSwapChainImages 5` is still firing ~50–60 times per second. Over a 12-second run: **648 swapchain recreations**.
+
+### Root cause of the residual recreation: resolution mismatch loop
+
+The chain is:
+
+1. sama's `Engine::beginFrame` Android branch reads `androidWindow_->width() = 2424` (full panel).
+2. `renderer_.resize(2424, 1080)` → `bgfx::reset(2424, 1080, BGFX_RESET_VSYNC)`.
+3. bgfx tries to create swapchain at `2424 × 1080`; Vulkan driver clamps to the display-cutout-safe extent `2251 × 1080`.
+4. bgfx stores the clamped value: `m_resolution.width = 2251` at `renderer_vk.cpp:3020-3021` (with the comment *"the actual width and height is now final (as it was potentially clamped by the Vulkan driver)"*).
+5. **Next frame**: bgfx's `updateResolution()` at line 9090 is called every render. Its mismatch check at line 7421-7422:
+   ```cpp
+   || m_resolution.width  != _resolution.width
+   || m_resolution.height != _resolution.height
+   ```
+   compares the stored clamped value (`m_resolution = 2251`) against the new request (`_resolution = 2424` — the original bgfx::reset stayed in `_render->m_resolution`). Mismatch → swapchain destroyed and recreated at 2424 → driver clamps to 2251 → goto 5.
+
+So SUBOPTIMAL is handled correctly, but the per-frame `updateResolution` mismatch comparison keeps the rebuild-per-frame loop alive.
+
+### What still doesn't change with the SUBOPTIMAL fix alone
+
+Sample stats from a 12 s run on Pixel 9 with `67ca197` + local SUBOPTIMAL patch applied:
+
+```
+SamaEngineBgfxStats: frame=120 bgfx::frameMs=12.68 waitRender=11.36 cpu=0.36 gpu=3.41 draws=21
+SamaEngineBgfxStats: frame=240 bgfx::frameMs=17.45 waitRender=17.57 cpu=0.31 gpu=3.83 draws=21
+SamaEngineBgfxStats: frame=360 bgfx::frameMs=18.56 waitRender=15.34 cpu=0.33 gpu=2.47 draws=21
+SamaEngineBgfxStats: frame=480 bgfx::frameMs=13.46 waitRender=11.76 cpu=0.17 gpu=2.93 draws=21
+SamaEngineBgfxStats: frame=600 bgfx::frameMs=17.38 waitRender=17.01 cpu=0.31 gpu=3.68 draws=21
+```
+
+`bgfx::frameMs` mean ≈ 15.9 ms — unchanged vs the MAILBOX run. The cost was never SUBOPTIMAL → recreate alone; it's recreate-per-frame-for-any-reason.
+
+### Two fix paths for the engine team
+
+1. **In bgfx (cleanest, fixes for all devices with cutouts)**: Don't trigger recreate when the only mismatch is that `_resolution` represents the *original app request* and `m_resolution` represents the *driver-clamped post-create reality* of that same request. Track the last as-requested width separately from the as-actually-running width and compare new requests against the as-requested value, not the clamped one. Roughly:
+
+   ```cpp
+   // After clamp:
+   m_resolution.width = m_backBuffer.m_width;    // clamped
+   m_lastRequestedWidth = _resolution.width;     // new: keep the original ask
+   
+   // In the mismatch check:
+   || m_lastRequestedWidth != _resolution.width  // compare to last ask, not clamp
+   ```
+
+2. **In sama (one-line)**: After `bgfx::reset()`, read the actually-running dimensions via `bgfx::getStats()->width/height` and store those as `fbW_/fbH_` instead of `ANativeWindow_getWidth()`. The next-frame check `(w != fbW_ || h != fbH_)` then sees `2424 == 2424` *and* `2251 == 2251` correctly and skips the reset entirely. This works around the bgfx behaviour without touching upstream, but bgfx still has the broken behaviour for any other game with a display cutout.
+
+Path (1) is the upstream-worthy bgfx fix; path (2) is a one-frame workaround in sama. Either drops `Create swapchain` count from ~650 to 1.
+
+### Side note
+
+`gfxinfo` now shows **5 GraphicBufferAllocator entries at 1080×2424 (portrait)** — different from the earlier 4 buffers at 2251×1080. Looks like with this run the activity ended up in portrait initially (lock-screen interaction). When it later rotates to the landscape we want, the resolution-mismatch loop kicks in.

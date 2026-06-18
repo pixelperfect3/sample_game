@@ -193,3 +193,83 @@ frame: full=20.72 begin=0.59 end=18.45 (post=0.00 bgfx=18.42) gameWork=1.68
 3. **What `apps/perf_smoke/run_both.sh` actually measures on a Pixel 9.** The "expected ~0.1 ms" in `docs/NOTES.md` line 304 came from somewhere — if perf_smoke gets the predicted number on the engine team's device but we don't on ours, there's a device or platform-config difference. If it gets the same ~15+ ms on their Pixel 9 too, the docs entry needs revising.
 
 Patch was reverted locally before this report was written — sama-src is back at clean upstream HEAD.
+
+---
+
+## Update — GPU-strip diagnostic: GPU cost ruled out, hypothesis 1 stands as conclusive
+
+After the vsync-off result, also stripped GPU work to break any remaining "the queue is full because the GPU can't keep up" loophole. Applied in `main_android.cpp` + `SampleGame::onInit`:
+
+- `EngineDesc::shadowResolution = 512` (atlas: 2 MB → 0.5 MB)
+- `RenderSettings::shadows.directionalRes = 512`
+- `RenderSettings::shadows.filter = Hard` (no PCF)
+- `RenderSettings::renderScale = 0.5` (fragment count drops 4×)
+- `RenderSettings::lighting.iblEnabled = false`
+- `RenderSettings::postProcess.fxaaEnabled = false`
+- `RenderSettings::postProcess.bloom.enabled = false`
+- `RenderSettings::postProcess.ssao.enabled = false`
+- `RenderSettings::depthPrepassEnabled = false`
+
+**Result on Pixel 9, figure-8 level: `bgfx::frame` row still ~15+ ms.** Unchanged.
+
+So bgfx::frame stays ~15+ ms across all three configurations:
+1. Default config (vsync on, full GPU) — 15+ ms
+2. Vsync off, full GPU — 15+ ms (queue stall hypothesis ruled out)
+3. Vsync on, GPU work demolished — 15+ ms (GPU cost ruled out)
+
+The cost is **inside `bgfx::frame()` itself doing the full submit + GPU wait synchronously on the game thread**, regardless of how much GPU work it's actually waiting for and regardless of whether the swapchain is paced. That is the textbook signature of single-threaded mode.
+
+**Final verdict on B2: bgfx is silently single-threaded at runtime on Android Vulkan despite `EngineDesc::singleThreaded = false`, `BGFX_CONFIG_MULTITHREADED=1` in the build, and `Renderer::init` correctly skipping the pre-init `bgfx::renderFrame()` call.**
+
+This is now entirely an engine / bgfx-Android-Vulkan investigation. The fastest path to root-causing it on the engine side: add a one-shot `__android_log_print` at the top of bgfx's `Context::renderThread()` (or wherever it spawns/joins the render thread) and check whether it fires on Pixel 9 init. If it doesn't fire, the render thread isn't being created — that's the bug.
+
+GPU-strip and vsync-off patches have been reverted on sample_game; we're back at the shipping high-tier config so the next sama drop can be tested clean.
+
+---
+
+## Correction — bgfx IS multi-threaded; hypothesis 1 was wrong
+
+Pulled sama `4eed082` which adds two complementary diagnostics:
+
+- `d6325c5 diag(rendering): dump bgfx::getStats() waitSubmit/waitRender + gpu time on Android` — per-frame stats under tag `SamaEngineBgfxStats`.
+- `4eed082 diag(rendering): route bgfx BX_TRACE to Android logcat` — wires a `BgfxLogcatCallback` so bgfx's internal `BX_TRACE("Running in %s-threaded mode", …)` reaches logcat under tag `SamaEngineBgfx`.
+
+Built + ran on Pixel 9 (figure-8 level, no GPU strip, vsync on — the shipping config).
+
+### Stats output
+
+```
+SamaEngineBgfxStats: frame=120 bgfx::frameMs=15.57 | waitSubmit=0.00 ms | waitRender=13.84 ms | cpu=0.38 ms gpu=3.33 ms | numDraws=21
+SamaEngineBgfxStats: frame=240 bgfx::frameMs=16.05 | waitSubmit=0.00 ms | waitRender=15.06 ms | cpu=0.34 ms gpu=3.87 ms | numDraws=21
+```
+
+**`waitRender = 13.84 / 15.06 ms` is the conclusive datum**: this field exists only when the submit thread is waiting on a **separate render thread**. If bgfx were single-threaded, `waitRender` would be 0 (there is no render thread to wait for). The render thread exists and is the bottleneck.
+
+So **hypothesis 1 (silently single-threaded) is refuted by direct measurement**. My earlier verdict based on the vsync-off and GPU-strip diagnostics was wrong — both of those tests *did* leave `bgfx::frame` at ~15 ms, but for a reason I didn't consider at the time: the render thread's own latency, not the absence of a render thread.
+
+### What the BX_TRACE callback did not show
+
+The `Running in multi-threaded mode` line never appeared under `SamaEngineBgfx`. Reason: the bgfx build flags include `BX_CONFIG_DEBUG=0`, which expands `BX_TRACE` to a no-op macro at compile time. The callback was correctly installed; nothing was ever sent through it. Fine — the stats numbers above are equally definitive and didn't need it.
+
+### Where the time actually goes
+
+- `bgfx::frameMs` = 15.57 ms — game-thread wall clock inside `bgfx::frame()`.
+- `cpu` = 0.38 ms — bgfx's own CPU work on the **submit thread**.
+- `gpu` = 3.33 ms — GPU end-to-end.
+- `waitRender` = 13.84 ms — game thread blocked waiting for render thread to consume the queue.
+
+15.57 − 0.38 − 13.84 ≈ 1.35 ms — the hand-off overhead.
+
+**The render thread itself is taking ~14 ms per frame.** It's submitting 21 draws of mostly-empty work (3.3 ms of GPU), so the time isn't in command-buffer recording or GPU work itself. The most likely culprit on Android Vulkan: **`vkAcquireNextImageKHR` blocking** while the compositor (SurfaceFlinger) holds onto swapchain images at the display refresh cadence. Even with `BGFX_RESET_VSYNC` cleared, Android's SurfaceFlinger paces presentation, so the acquire blocks ~vsync-period when the swapchain is short.
+
+### New hypotheses for the engine side
+
+1. **Swapchain image count is too low.** Android Vulkan typically allows 2–4 swapchain images. If bgfx requested 2, the render thread can never get ahead — it always blocks on the next acquire. Requesting 3 (or honouring whatever the device reports as `minImageCount + 1`) would give the render thread room to run a frame ahead of the compositor.
+2. **`vkAcquireNextImageKHR` is being called inline on the render thread instead of using a fence/semaphore pattern.** A non-blocking acquire (with a semaphore that the next command-buffer waits on) would let the render thread do useful work while the compositor holds an image.
+3. **Android's `Choreographer` cadence is the floor**, and the docs' `~0.1 ms` figure came from a desktop/Windows/Mac measurement where SurfaceFlinger isn't in the loop. The docs should call this out so future readers don't expect the same number on Android.
+
+### What would close this
+
+If swapchain image count is the issue, the fix is a 1–3 line change in bgfx's Vulkan renderer init (`renderer_vk.cpp` — request `max(2, minImageCount + 1)` for the swapchain). If the acquire pattern is the issue, that's a larger refactor inside bgfx and probably an upstream PR.
+
+Once the render thread can actually overlap with the compositor, `waitRender` should drop to ≪ 1 ms and `bgfx::frame` collapses to the hand-off cost the docs predict.

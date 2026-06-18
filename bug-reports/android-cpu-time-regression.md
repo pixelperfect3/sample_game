@@ -363,3 +363,63 @@ const VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
                                               acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
 ```
 If this is called inline-synchronously on the render thread before submitting the next frame's commands (rather than using the acquire semaphore to gate the next submit's wait stage), the render thread blocks acquire ~ one vsync regardless of swapchain depth. That's the bgfx-upstream pattern fix.
+
+---
+
+## Update — MAILBOX patch (`089fe5b`) did NOT close the gap
+
+Applied `patches/bgfx_android_mailbox_present.patch` manually to our existing `build/_deps/bgfx_cmake-src` checkout (FetchContent's `PATCH_COMMAND` only fires on initial download; we verified MAILBOX is now first in `s_presentMode` at line 153 post-patch). Rebuilt + installed on Pixel 9.
+
+### Ten consecutive `SamaEngineBgfxStats` samples (figure-8 level, idle ball)
+
+```
+frame=720  bgfx::frameMs=9.21  waitSubmit=0.00 waitRender=11.89 cpu=0.21 gpu=2.42 draws=21
+frame=840  bgfx::frameMs=24.77 waitSubmit=0.00 waitRender=23.72 cpu=1.77 gpu=2.90 draws=21
+frame=960  bgfx::frameMs=10.85 waitSubmit=0.00 waitRender=10.61 cpu=0.19 gpu=2.49 draws=21
+frame=1080 bgfx::frameMs=16.86 waitSubmit=0.26 waitRender=19.84 cpu=0.39 gpu=3.09 draws=21
+frame=1200 bgfx::frameMs=21.47 waitSubmit=1.32 waitRender=20.39 cpu=0.49 gpu=3.41 draws=21
+frame=1320 bgfx::frameMs=14.06 waitSubmit=0.00 waitRender=17.96 cpu=0.22 gpu=3.38 draws=21
+frame=1440 bgfx::frameMs=16.20 waitSubmit=0.00 waitRender=17.54 cpu=0.31 gpu=3.46 draws=21
+frame=1560 bgfx::frameMs=19.97 waitSubmit=0.00 waitRender=18.69 cpu=0.38 gpu=3.90 draws=21
+frame=1680 bgfx::frameMs=17.91 waitSubmit=0.00 waitRender=17.36 cpu=0.31 gpu=3.76 draws=21
+frame=1800 bgfx::frameMs=14.85 waitSubmit=0.00 waitRender=13.74 cpu=0.32 gpu=3.58 draws=21
+```
+
+Mean `bgfx::frameMs` across the 10 samples: **16.6 ms** — still pinned to the panel's 16.67 ms vsync period. Median 17.4 ms. Variance is wide (9.21 → 24.77 ms) but the average is unchanged from the FIFO baseline.
+
+### Indirect evidence MAILBOX *did* engage
+
+The `Selected present mode` `BX_TRACE` line from the patch never appears in logcat (same `BX_CONFIG_DEBUG=0` issue as before — `BX_TRACE` is compiled out). So we don't have first-party confirmation that MAILBOX is the active present mode.
+
+What the data suggests:
+
+- The 9.21 ms outlier sample is impossible under strict FIFO — FIFO blocks `vkAcquireNextImageKHR` until SurfaceFlinger releases an image, which on this device happens at ~16.7 ms intervals. A real <16.7 ms frame means *some* frames are being released back to bgfx faster than vsync, which is MAILBOX's discard semantic.
+- The 24.77 ms outlier sample is consistent with the compositor still gating the long-run cadence at the panel refresh and occasionally costing us two vsyncs for one frame.
+
+Combined picture: MAILBOX appears to be selected, but the compositor (SurfaceFlinger on Android 16 / Pixel 9) is still enforcing refresh-rate gating *at some point in the pipeline* such that the long-run average stays at the vsync period.
+
+### `gfxinfo` after the patch
+
+```
+GraphicBufferAllocator buffers:
+  0xb400006fa270f010 | 9517.50 KiB | 2251 (2256) x 1080 | VRI[NativeActivity]#0(BLAST Consumer)0
+  0xb400006fa270fc70 | 9517.50 KiB | 2251 (2256) x 1080 | VRI[NativeActivity]#0(BLAST Consumer)0
+  0xb400006fa27113d0 | 9517.50 KiB | 2251 (2256) x 1080 | VRI[NativeActivity]#0(BLAST Consumer)0
+  0xb400006fa2712f50 | 9517.50 KiB | 2251 (2256) x 1080 | VRI[NativeActivity]#0(BLAST Consumer)0
+```
+
+4 buffers (the patch's `+ revert swapchain depth change` dropped `numBackBuffers=3` back to bgfx default; the count we see is the Android-side surface buffer chain — BLAST Consumer triple-buffer plus an in-flight image).
+
+### Pointing toward the team's fallback hypothesis 2
+
+> Compositor enforces refresh-rate gating at `vkQueuePresentKHR` itself (would push the wait to `present()` instead of `acquire()`).
+
+This best matches the data:
+
+- *If hypothesis 1 (Tensor driver silently downgrades MAILBOX to FIFO):* every frame would be glued to ~16.7 ms. The 9.21 ms outlier rules that out.
+- *If hypothesis 2 (compositor gates at present):* MAILBOX is selected, the render thread successfully acquires images sometimes faster than vsync (the 9.21 ms sample), but `vkQueuePresentKHR` still blocks at refresh cadence so the long-run average stays at the panel period. ✓
+- *If hypothesis 3 (something upstream of acquire is the actual blocker):* would need a RenderDoc Android / AGI capture to see which `vk*` call the render thread spends its time in.
+
+The next reasonable engine-side step is to time the render thread's `vkAcquireNextImageKHR`, `vkQueueSubmit`, and `vkQueuePresentKHR` calls individually and post the breakdown — that distinguishes hypothesis 2 from 3 in one APK rebuild.
+
+For the docs entry: the original "~0.1 ms" claim is likely correct on *desktop* Vulkan and possibly correct on Android with `Surface.setFrameRate(refreshRate)` letting the compositor drop frame-pacing enforcement. On Pixel 9 / Android 16 with the stock per-frame `requestedFrameRate: {0.00 Hz}` we see in `dumpsys SurfaceFlinger`, the compositor appears to enforce vsync at present regardless of swapchain configuration.

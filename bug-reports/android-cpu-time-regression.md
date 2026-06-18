@@ -423,3 +423,59 @@ This best matches the data:
 The next reasonable engine-side step is to time the render thread's `vkAcquireNextImageKHR`, `vkQueueSubmit`, and `vkQueuePresentKHR` calls individually and post the breakdown — that distinguishes hypothesis 2 from 3 in one APK rebuild.
 
 For the docs entry: the original "~0.1 ms" claim is likely correct on *desktop* Vulkan and possibly correct on Android with `Surface.setFrameRate(refreshRate)` letting the compositor drop frame-pacing enforcement. On Pixel 9 / Android 16 with the stock per-frame `requestedFrameRate: {0.00 Hz}` we see in `dumpsys SurfaceFlinger`, the compositor appears to enforce vsync at present regardless of swapchain configuration.
+
+---
+
+## SMOKING GUN — bgfx recreates the swapchain on every frame
+
+Compiled bgfx with `-DBX_CONFIG_DEBUG=ON` per the engine team's request to surface the full `BX_TRACE` stream through our `BgfxLogcatCallback`. The very first capture shows the actual bug:
+
+```
+SamaEngineBgfx: BGFX vkQueuePresentKHR(...): result = VK_SUBOPTIMAL_KHR
+SamaEngineBgfx: BGFX Create swapchain numSwapChainImages 5, minImageCount 5, BX_COUNTOF(m_backBufferColorImage) 10
+SamaEngineBgfx: BGFX Successfully created swapchain (2251x1080) with 5 images.
+SamaEngineBgfx: BGFX vkQueuePresentKHR(...): result = VK_SUBOPTIMAL_KHR
+SamaEngineBgfx: BGFX Create swapchain ...
+```
+
+This pattern repeats **every ~15-17 ms** for the lifetime of the activity:
+
+1. Render thread submits a frame.
+2. `vkQueuePresentKHR` returns `VK_SUBOPTIMAL_KHR` (not `VK_SUCCESS`).
+3. bgfx interprets that as "swapchain must be recreated", calls `vkDeviceWaitIdle` (full GPU drain), destroys the swapchain, allocates a new one at the same dimensions.
+4. Recreated swapchain is reused for the next frame.
+5. `vkQueuePresentKHR` returns `VK_SUBOPTIMAL_KHR` again. Goto 3.
+
+**The "15 ms `bgfx::frame`" we have been chasing is the wall-clock cost of `vkDestroySwapchainKHR` + `vkCreateSwapchainKHR` + image-view recreation + `vkDeviceWaitIdle`, executed on the render thread, on every frame.**
+
+### Why every prior fix had no effect
+
+- `numBackBuffers=3` — irrelevant; the entire swapchain is recreated every frame regardless of how many images it has.
+- MAILBOX present mode — irrelevant for the same reason. Whatever mode is selected, the swapchain dies the moment after present.
+- vsync-off diagnostic — likewise. Removing `BGFX_RESET_VSYNC` doesn't change the present-result code.
+- GPU-strip — likewise. GPU cost wasn't the bottleneck.
+
+The `waitRender = ~14 ms` and `bgfx::frameMs = ~16 ms` numbers are entirely consistent with this: the render thread spends its frame doing the rebuild, the game thread blocks waiting for the queue slot, and the long-run average matches the panel period only because rebuild-cost-per-frame happens to be ≈ vsync period on this hardware.
+
+### Likely root cause
+
+The Pixel 9's display has a **camera cutout**. The activity's drawable region is `2251 × 1080` (panel `2424 × 1080` minus a 173-px cutout — visible in `dumpsys SurfaceFlinger` as `displayCutoutSafeInsets=Rect(173, 0 - 0, 0)`). But Vulkan's `vkGetPhysicalDeviceSurfaceCapabilitiesKHR(...)→currentExtent` reports the full panel size (the surface includes the cutout area).
+
+When bgfx creates the swapchain at the smaller `2251 × 1080` (the size we asked for via `androidWindow_->width() / height()`), the Vulkan loader sees `swapchain extent != currentExtent` and returns `VK_SUBOPTIMAL_KHR` from every subsequent present. bgfx's `present()` path interprets that as "surface changed, must rebuild" — but the dimensions we *want* are unchanged, so the rebuild produces the same wrong-size swapchain and we suboptimal again next frame.
+
+This is a known Android Vulkan integration issue with display cutouts — the surface's `currentExtent` includes the full panel, the application's drawable region excludes the cutout, and the swapchain has to be created at the full `currentExtent` (then either rendered to with a cropped viewport, or composited with letterbox bars).
+
+### Suggested next investigation on the engine side
+
+1. Confirm by logging `currentExtent` from `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` in `Renderer::init` vs the dimensions we pass to `bgfx::init`. If they differ, that's the bug.
+2. Two fixes:
+   - **Treat `VK_SUBOPTIMAL_KHR` as success in bgfx's present path** — it's not actually broken, it's "presentable but not at the surface's preferred extent." bgfx upstream may already have this option; check `renderer_vk.cpp` around line 7780+ for the present-result handling.
+   - **Create the swapchain at the surface's reported `currentExtent`** (`2424 × 1080`), and use viewport / framebuffer cropping for the cutout area — the higher-effort but more correct fix.
+3. Either fix should drop `bgfx::frame` from ~15 ms to ~0.1 ms with one APK rebuild.
+
+### Side notes from the BX_TRACE stream
+
+- `numSwapChainImages = 5` (bgfx requests `minImageCount + 1` and Pixel 9's `minImageCount = 4`, likely because the BLAST consumer requires 4). The `numBackBuffers=3` setting from `6a0cd65` was reverted in `089fe5b` — that ended up not mattering anyway.
+- `BGFX_RESET_VSYNC` is still requested. MAILBOX-vs-FIFO is moot until the swapchain stops being recreated.
+
+**Recommend reverting BX_CONFIG_DEBUG=OFF after the team has captured the trace** they want — the per-frame trace volume is high (~3 lines × 60+ fps) and the macro framework adds measurable overhead.

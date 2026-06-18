@@ -316,3 +316,50 @@ If the count comes back as 3 → it's hypothesis 2 or 3, and the next investigat
 If the count comes back as 2 → it's hypothesis 1, the patch wasn't honored, and the next try is to also nudge `BGFX_RESET_MAXANISOTROPY`-style flags or whatever bgfx exposes for swapchain depth in a way the device respects.
 
 `sample_game` is on the latest sama unmodified; happy to rebuild + capture the moment the engine-side reads the actual count.
+
+---
+
+## Settled — `numBackBuffers = 3` DID engage; hypothesis 1 ruled out
+
+External verification via `adb shell dumpsys gfxinfo com.pixelperfect3.samplegame`:
+
+```
+GraphicBufferAllocator buffers:
+            Handle |         Size |     W (Stride) x H | ... | Requestor
+0xb400006fa270ed50 |  9517.50 KiB | 2251 (2256) x 1080 | ... | VRI[NativeActivity]#0(BLAST Consumer)0
+0xb400006fa270f430 |  9517.50 KiB | 2251 (2256) x 1080 | ... | VRI[NativeActivity]#0(BLAST Consumer)0
+0xb400006fa2710090 |  9517.50 KiB | 2251 (2256) x 1080 | ... | VRI[NativeActivity]#0(BLAST Consumer)0
+```
+
+**Three** buffers for the NativeActivity's BLAST Consumer surface. The fix engaged; Pixel 9's `VkSurfaceCapabilitiesKHR::maxImageCount` did not cap to 2.
+
+**Verdict updated:**
+- Hypothesis 1 (capped to 2) — **ruled out**.
+- Hypothesis 3 (acquire pattern is the gate, not depth) — **strongly favoured** by the data. Going 2 → 3 added in-flight latency (more buffers in the chain → more accumulated `waitRender`) without unblocking the synchronous `vkAcquireNextImageKHR` on the render thread. Frame time *slightly regressed*, which is the signature of "adding latency without removing the serializer."
+- Hypothesis 2 (per-image release latency ate the win) — still possible, harder to distinguish from 3 without a Vulkan capture. Both produce the same `waitRender` shape.
+
+### Why the `numSwapChainImages` log didn't appear
+
+bgfx's macro at `bgfx_p.h:48`:
+
+```cpp
+#if BX_CONFIG_DEBUG
+#  define BX_TRACE  _BGFX_TRACE     // hooked to callback->traceVargs
+#  define BX_WARN   _BGFX_WARN
+#  define BX_ASSERT _BGFX_ASSERT
+#endif
+```
+
+When `BX_CONFIG_DEBUG=0` (our build), `BX_TRACE` falls back to bx's default, which is also a no-op when bx itself was built with debug off. The `BX_TRACE("Create swapchain numSwapChainImages %d ...")` at `renderer_vk.cpp:7691` compiles to nothing — our `BgfxLogcatCallback::traceVargs` is wired correctly, but bgfx never calls it.
+
+### Recommended next investigation
+
+Patch `bgfx/src/renderer_vk.cpp` to call `bx::debugPrintf` instead of `BX_TRACE` at the swapchain-create site (one line) so the count, vsync mode, present mode, image format, and min/max ranges are visible regardless of debug flag. Or flip `BX_CONFIG_DEBUG=1` in the bgfx cmake (noisier but turns on every BX_TRACE).
+
+Then the focus moves to the acquire pattern inside bgfx's Vulkan backend:
+```cpp
+// bgfx renderer_vk.cpp — around m_backBuffer.acquire(...)
+const VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
+                                              acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
+```
+If this is called inline-synchronously on the render thread before submitting the next frame's commands (rather than using the acquire semaphore to gate the next submit's wait stage), the render thread blocks acquire ~ one vsync regardless of swapchain depth. That's the bgfx-upstream pattern fix.

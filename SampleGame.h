@@ -16,6 +16,7 @@
 #include "engine/physics/JoltPhysicsEngine.h"
 #include "engine/physics/PhysicsSystem.h"
 #include "engine/rendering/IblResources.h"
+#include "engine/rendering/SkyboxRenderer.h"
 #include "engine/rendering/systems/DrawCallBuildSystem.h"
 #include "engine/threading/ThreadPool.h"
 #include "engine/ui/DebugHud.h"
@@ -66,6 +67,8 @@ private:
     engine::physics::PhysicsSystem physicsSys_;
     engine::rendering::DrawCallBuildSystem drawCallSys_;
     engine::rendering::IblResources ibl_;
+    engine::rendering::SkyboxRenderer skybox_;
+    int skyboxLoadedForLevel_ = -2;  // sentinel: -2 = nothing loaded yet
 
     // Asset loading
     engine::threading::ThreadPool threadPool_{1};

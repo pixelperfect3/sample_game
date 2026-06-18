@@ -11,6 +11,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "engine/assets/CubemapLoader.h"
 #include "engine/assets/GltfLoader.h"
 #include "engine/audio/IAudioEngine.h"
 #include "engine/core/Engine.h"
@@ -354,8 +355,12 @@ void SampleGame::onInit(Engine& engine, Registry& registry)
             std::fprintf(stderr, "SampleGame: failed to read assets/beep.wav\n");
     }
 
-    // ---- IBL --------------------------------------------------------------
-    ibl_.generateDefault();
+    // ---- IBL + skybox -----------------------------------------------------
+    // The cubemap (which doubles as IBL source and visible sky) is loaded
+    // per-level by loadLevel().  Sky on the title screen would require a
+    // default upload here; we leave it off and the title clears to the
+    // background color until the player picks a level.
+    skybox_.init();
 
     // ---- UI (font + renderer) -----------------------------------------------
     // On Android, extractAllAssets + chdir means these paths now resolve
@@ -881,6 +886,29 @@ void SampleGame::loadLevel(Engine& engine, Registry& registry, int level)
 
     engine::scene::TransformSystem transformSys;
     transformSys.update(registry);
+
+    // ---- Per-level skybox / IBL ------------------------------------------
+    // loadCubemapEnvironment runs the full IBL bake (irradiance + 8-mip
+    // specular + BRDF LUT) — ~1 s on desktop, longer on Android.  We only
+    // re-run it when the level actually changes.
+    if (skyboxLoadedForLevel_ != level)
+    {
+        const char* cubemapPath = (level == 0)
+            ? "assets/textures/skyboxes/park.ktx"
+            : "assets/textures/skyboxes/space.ktx";
+        auto env = engine::assets::loadCubemapEnvironment(cubemapPath);
+        if (env.has_value() && ibl_.upload(*env))
+        {
+            skyboxLoadedForLevel_ = level;
+        }
+        else
+        {
+            std::fprintf(stderr, "SampleGame: failed to load skybox %s\n", cubemapPath);
+            // Fall back to procedural so PBR lighting still works.
+            ibl_.generateDefault();
+            skyboxLoadedForLevel_ = -1;
+        }
+    }
 }
 
 void SampleGame::spawnAllCoins(Registry& registry)
@@ -1390,6 +1418,18 @@ void SampleGame::onRender(Engine& engine)
                             engine.pbrProgram(), engine.uniforms(), frame);
     }
 
+    // Skybox: drawn on the same view as the opaque pass, AFTER opaque
+    // submits, so its depth test culls it where scene geometry already drew.
+    // Visible cubemap = mip 0 of the prefiltered IBL specular cube — same
+    // pattern the engine editor uses.  IblResources still returns a bgfx
+    // handle (proposal #2 didn't cover this header); reach into .idx until
+    // a bgfx-free accessor lands upstream.
+    if (skybox_.isValid() && ibl_.isValid())
+    {
+        skybox_.render(kViewOpaque,
+                       engine::rendering::TextureHandle{ibl_.prefiltered().idx});
+    }
+
     // ---- HUD --------------------------------------------------------------
     const int collected = coinCount_ - coinsRemaining_;
     const bool levelComplete = (coinsRemaining_ == 0);
@@ -1837,6 +1877,7 @@ void SampleGame::onShutdown(Engine& /*engine*/, Registry& /*registry*/)
         hudFont_ = nullptr;
         hudFontLoaded_ = false;
     }
+    skybox_.shutdown();
     ibl_.shutdown();
     physics_.shutdown();
     audio_.shutdown();

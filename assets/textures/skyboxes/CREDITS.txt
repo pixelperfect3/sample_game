@@ -1,0 +1,17 @@
+park.ktx
+  Source     : Museumplein HDRI by Greg Zaal
+               https://polyhaven.com/a/museumplein
+  License    : CC0 (public domain, no attribution required)
+  Processing : 8K equirectangular tonemapped JPG → 6-face cube (1024 px / face)
+               via build/skybox_workspace/make_cubemaps.py
+
+space.ktx
+  Source     : "Space Skyboxes" set 2 of 2 by Westbeam
+               https://opengameart.org/content/space-skyboxes-1
+  License    : WTFPL / CC0 (per author: "actually WTFP-license")
+  Processing : 6 PNG faces (2048 px) → 6-face cube (1024 px / face)
+               via build/skybox_workspace/make_cubemaps.py
+  Face order : 1.png→+X, 2.png→-X, 5.png→+Y, 3.png→-Y, 4.png→+Z, 6.png→-Z
+               (the source files name faces 1..6 with no convention; face 3
+               is the dark one so it's mapped to -Y, the rest follow the
+               main nebula orientation visible in the in-game cubemap)

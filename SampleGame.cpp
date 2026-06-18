@@ -121,7 +121,7 @@ constexpr bool kPerfOverlayDefault = true;
 // set to 0 (plank) or 1 (figure-8) to load that level directly at
 // startup, bypassing the title.  Useful for iterating on a specific
 // level without clicking "Start Game" every reload.
-constexpr int kDebugStartLevel = 1;
+constexpr int kDebugStartLevel = -1;
 
 // Audio gate.  B1 fix (atomic gate in soloud_miniaudio.cpp) landed in
 // sama 0e9bf2e — verified working.  Then REGRESSED in the perf-audit

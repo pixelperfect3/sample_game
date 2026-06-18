@@ -273,3 +273,46 @@ The `Running in multi-threaded mode` line never appeared under `SamaEngineBgfx`.
 If swapchain image count is the issue, the fix is a 1–3 line change in bgfx's Vulkan renderer init (`renderer_vk.cpp` — request `max(2, minImageCount + 1)` for the swapchain). If the acquire pattern is the issue, that's a larger refactor inside bgfx and probably an upstream PR.
 
 Once the render thread can actually overlap with the compositor, `waitRender` should drop to ≪ 1 ms and `bgfx::frame` collapses to the hand-off cost the docs predict.
+
+---
+
+## Update — sama `6a0cd65` (numBackBuffers=3) did NOT close the gap
+
+Pulled, rebuilt, installed. Verified `init.resolution.numBackBuffers = 3` is in the compiled `Renderer.cpp.o` (source line 191; .o mtime matches the fresh source). Pixel 9 / Android 16 / Vulkan, figure-8 scene, vsync on (shipping config).
+
+### Numbers (worse, not better)
+
+```
+SamaEngineBgfxStats: frame=120 bgfx::frameMs=17.15 | waitSubmit=0.00 | waitRender=18.68 | cpu=0.26 | gpu=3.03 | draws=21
+SamaEngineBgfxStats: frame=240 bgfx::frameMs=19.01 | waitSubmit=0.00 | waitRender=24.59 | cpu=0.40 | gpu=4.25 | draws=21
+```
+
+Baseline from sama `4eed082` (1 commit before this fix) on the same device + scene:
+```
+bgfx::frameMs=15.57 | waitRender=13.84
+bgfx::frameMs=16.05 | waitRender=15.06
+```
+
+Frame time regressed by **~2 ms** and waitRender by **~5–10 ms**.
+
+### `Create swapchain` log line didn't appear
+
+Same root cause as the threading-mode line: bgfx is built with `BX_CONFIG_DEBUG=0`, so the `BX_TRACE("Create swapchain numSwapChainImages %u, ...")` at the bgfx call site compiles to a no-op. The `SamaEngineBgfx` callback is correctly installed but receives nothing.
+
+We have no direct confirmation that `numBackBuffers = 3` actually engaged.  Three possibilities ranked by what the data supports:
+
+1. **`maxImageCount` capped to 2** on Pixel 9 — fix didn't take effect, observed change is frame-to-frame noise. A one-line `__android_log_print` right after `bgfx::init` reading the actual swapchain image count (probably via `bgfx::getCaps()` or a fresh BX log site that isn't `BX_TRACE`) would settle this in a single APK rebuild.
+2. **3 images engaged, but each extra image cost ~one vsync of compositor-release latency** on this Android version, so the back-pressure win was eaten by added per-image latency. Consistent with the team's "acceptable tradeoff" note but suggests the cost is higher than predicted.
+3. **The gate was never swapchain depth** — `vkAcquireNextImageKHR` is called inline-synchronously on bgfx's render thread regardless of swapchain size, so the render thread blocks acquire ~one vsync period whether the swapchain is 2 or 3 deep. Adding an image just adds in-flight latency without unblocking acquire. This is the team's fallback hypothesis 1 (semaphore-driven acquire pattern in `renderer_vk.cpp`).
+
+Hypothesis (3) most cleanly explains *why frame time got slightly worse*: queue depth went up, more frames in flight, more accumulated wait time visible to `waitRender`, but the synchronous acquire still serializes the render thread.
+
+### Next probe that would settle (1) vs (2/3)
+
+A non-`BX_TRACE` print of the bgfx-observed swapchain size right after `bgfx::init` returns — `bgfx::getInternalData()` exposes the underlying `VkSwapchainKHR` on Vulkan, from which `vkGetSwapchainImagesKHR` can return the actual count. ~5 lines.
+
+If the count comes back as 3 → it's hypothesis 2 or 3, and the next investigation is the acquire path inside bgfx (likely an upstream PR rather than a Sama-side change).
+
+If the count comes back as 2 → it's hypothesis 1, the patch wasn't honored, and the next try is to also nudge `BGFX_RESET_MAXANISOTROPY`-style flags or whatever bgfx exposes for swapchain depth in a way the device respects.
+
+`sample_game` is on the latest sama unmodified; happy to rebuild + capture the moment the engine-side reads the actual count.

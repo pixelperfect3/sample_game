@@ -1,0 +1,20 @@
+diff --git a/engine/shaders/vs_skybox.sc b/engine/shaders/vs_skybox.sc
+index cfffabe..a1dbc5d 100644
+--- a/engine/shaders/vs_skybox.sc
++++ b/engine/shaders/vs_skybox.sc
+@@ -30,8 +30,13 @@ void main()
+     vec4 nearWorld = mul(u_invViewProj, vec4(a_position.xy, 0.0, 1.0));
+     nearWorld.xyz /= nearWorld.w;
+ 
+-    // Camera world position is the translation column of u_invView.
+-    vec3 camPos = vec3(u_invView[3][0], u_invView[3][1], u_invView[3][2]);
++    // Camera world position is the translation column of u_invView.  The
++    // element-access form `u_invView[3][0..2]` cross-compiles to Metal as
++    // `u_invView[0..2][3]` (the bottom row, all zero for an affine view
++    // matrix) — see bgfx's spirv-cross transcription quirk.  Going through a
++    // matrix-vector multiply transforms origin to camera world position
++    // reliably across every backend.
++    vec3 camPos = mul(u_invView, vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+ 
+     v_worldPos = nearWorld.xyz - camPos;
+ }
